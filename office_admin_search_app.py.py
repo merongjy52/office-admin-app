@@ -284,6 +284,106 @@ work_designated_off_data = {
     ]
 }
 
+import re
+
+def parse_designated_off_text(user_text: str):
+    text = user_text.replace(" ", "")
+    case_type = None
+    prev_shift = ""
+    next_shift = ""
+    remaining_days = None
+
+    if "현업일근" in text:
+        case_type = "현업일근 기준"
+        if "현업일근" in text and "21주기" in text:
+            if text.index("현업일근") < text.index("21주기"):
+                prev_shift = "현업일근→21주기"
+            else:
+                prev_shift = "21주기→현업일근"
+    elif "6주기" in text:
+        case_type = "6주기 기준"
+        prev_shift = "통상/21주기→6주기"
+    elif "21주기" in text:
+        case_type = "21주기 기준"
+        if "통상" in text and "21주기" in text:
+            prev_shift = "통상→21주기"
+        elif "주간" in text and "야간" in text:
+            if text.index("주간") < text.index("야간"):
+                prev_shift = "주간"
+                next_shift = "야간"
+            else:
+                prev_shift = "야간"
+                next_shift = "주간"
+
+    match = re.search(r"([0-9]+)일", text)
+    if match:
+        remaining_days = int(match.group(1))
+
+    return {
+        "case_type": case_type,
+        "prev_shift": prev_shift,
+        "next_shift": next_shift,
+        "remaining_days": remaining_days,
+    }
+
+
+def calculate_designated_off(case_type: str, remaining_days: int, prev_shift: str = "", next_shift: str = ""):
+    result = {
+        "result": "계산할 수 없습니다.",
+        "reason": "입력값이 부족하거나 현재 규칙에 없는 조합입니다.",
+        "rule": "지정휴무 표 기준을 다시 확인하세요."
+    }
+
+    if case_type == "21주기 기준":
+        if prev_shift == "통상→21주기":
+            result["result"] = "2일 발생"
+            result["reason"] = "통상에서 21주기로 변경되는 경우는 잔여근무일수와 관계없이 2일 발생 기준입니다."
+            result["rule"] = "21주기당 지정휴무 사용기준: 통상 → 21주기(주간) 시 2일 발생"
+            return result
+        if prev_shift == "주간" and next_shift == "야간":
+            if remaining_days >= 4:
+                result["result"] = "1일 발생"
+                result["reason"] = f"주간에서 야간으로 변경되고 잔여근무일수가 {remaining_days}일이므로 4일 이상 기준에 해당합니다."
+            else:
+                result["result"] = "미발생"
+                result["reason"] = f"주간에서 야간으로 변경되고 잔여근무일수가 {remaining_days}일이므로 3일 이하 기준에 해당합니다."
+            result["rule"] = "21주기 기준: 주간 → 야간, 4일 이상 1일 발생 / 3일 이하 미발생"
+            return result
+        if prev_shift == "야간" and next_shift == "주간":
+            if remaining_days >= 3:
+                result["result"] = "2일 발생"
+                result["reason"] = f"야간에서 주간으로 변경되고 잔여근무일수가 {remaining_days}일이므로 3일 이상 기준에 해당합니다."
+            else:
+                result["result"] = "1일 발생"
+                result["reason"] = f"야간에서 주간으로 변경되고 잔여근무일수가 {remaining_days}일이므로 2일 이하 기준에 해당합니다."
+            result["rule"] = "21주기 기준: 야간 → 주간, 3일 이상 2일 발생 / 2일 이하 1일 발생"
+            return result
+
+    if case_type == "현업일근 기준" and prev_shift in ["현업일근→21주기", "21주기→현업일근"]:
+        if remaining_days >= 5:
+            result["result"] = "2일 발생"
+            result["reason"] = f"{prev_shift} 변경이고 잔여근무일수가 {remaining_days}일이므로 5일 이상 기준입니다."
+        else:
+            result["result"] = "1일 발생"
+            result["reason"] = f"{prev_shift} 변경이고 잔여근무일수가 {remaining_days}일이므로 4일 이하 기준입니다."
+        result["rule"] = "현업일근 기준: 5일 이상 2일 발생 / 4일 이하 1일 발생"
+        return result
+
+    if case_type == "6주기 기준" and prev_shift == "통상/21주기→6주기":
+        if 1 <= remaining_days <= 6:
+            result["result"] = "월 2회"
+            result["reason"] = f"배치일 또는 잔여일수가 {remaining_days}일이므로 1~6일 구간입니다."
+        elif 7 <= remaining_days <= 20:
+            result["result"] = "월 1회"
+            result["reason"] = f"배치일 또는 잔여일수가 {remaining_days}일이므로 7~20일 구간입니다."
+        else:
+            result["result"] = "미발생"
+            result["reason"] = f"배치일 또는 잔여일수가 {remaining_days}일이므로 21일 이상 구간입니다."
+        result["rule"] = "6주기 기준: 1~6일 월 2회 / 7~20일 월 1회 / 21일 이상 미발생"
+        return result
+
+    return result
+
 # -----------------------------
 # 스타일
 # -----------------------------
@@ -424,8 +524,7 @@ if main_menu == "근무제도" and sub_menu == "근무일과 휴일":
         with st.expander(item["q"]):
             st.write(item["a"])
 
-    st.divider()
-    st.info("다음 단계에서는 근무시간과 휴게시간 화면을 이어서 붙이면 됩니다.")
+    
 
 elif main_menu == "근무제도" and sub_menu == "근무시간과 휴게시간":
     st.markdown(f"## {worktime_break_data['title']}")
@@ -500,8 +599,7 @@ elif main_menu == "근무제도" and sub_menu == "근무시간과 휴게시간":
         with st.expander(item["q"]):
             st.write(item["a"])
 
-    st.divider()
-    st.info("다음 단계에서는 휴일대체근무제도 화면을 같은 형식으로 이어서 붙이면 됩니다.")
+    
 
 elif main_menu == "근무제도" and sub_menu == "휴일대체근무제도":
     st.markdown(f"## {work_overtime_data['title']}")
@@ -582,8 +680,7 @@ elif main_menu == "근무제도" and sub_menu == "휴일대체근무제도":
         with st.expander(item["q"]):
             st.write(item["a"])
 
-    st.divider()
-    st.info("다음 단계에서는 근무형태 변경시 처리 화면을 같은 형식으로 이어서 붙이면 됩니다.")
+    
 
 elif main_menu == "근무제도" and sub_menu == "근무형태 변경시 처리":
     st.markdown(f"## {work_change_data['title']}")
@@ -629,8 +726,7 @@ elif main_menu == "근무제도" and sub_menu == "근무형태 변경시 처리"
         st.write(f"- {item}")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.divider()
-    st.info("다음 단계에서는 지정휴무 화면까지 확인한 뒤 휴가제도 화면으로 이어서 만들면 됩니다.")
+    
 
 elif main_menu == "근무제도" and sub_menu == "지정휴무":
     st.markdown(f"## {work_designated_off_data['title']}")
@@ -691,6 +787,101 @@ elif main_menu == "근무제도" and sub_menu == "지정휴무":
         })
         st.markdown("</div>", unsafe_allow_html=True)
 
+    st.markdown("### 지정휴무 자동 판단")
+    st.markdown("<div class='block-card'>", unsafe_allow_html=True)
+
+    auto_mode = st.radio(
+        "입력 방식",
+        ["선택형 입력", "문장형 입력"],
+        horizontal=True,
+        key="designated_input_mode"
+    )
+
+    if auto_mode == "선택형 입력":
+        calc_case_type = st.selectbox(
+            "기준 유형을 선택하세요",
+            ["21주기 기준", "현업일근 기준", "6주기 기준"],
+            key="designated_case_type"
+        )
+
+        if calc_case_type == "21주기 기준":
+            calc_prev_shift = st.selectbox(
+                "변경 전 근무를 선택하세요",
+                ["통상→21주기", "주간", "야간"],
+                key="designated_prev_shift_21"
+            )
+            calc_next_shift = ""
+            if calc_prev_shift in ["주간", "야간"]:
+                calc_next_shift = st.selectbox(
+                    "변경 후 근무를 선택하세요",
+                    ["야간"] if calc_prev_shift == "주간" else ["주간"],
+                    key="designated_next_shift_21"
+                )
+            calc_remaining_days = st.number_input(
+                "잔여 근무일수",
+                min_value=0,
+                max_value=31,
+                value=4,
+                step=1,
+                key="designated_remaining_21"
+            )
+            calc_data = calculate_designated_off(calc_case_type, calc_remaining_days, calc_prev_shift, calc_next_shift)
+
+        elif calc_case_type == "현업일근 기준":
+            calc_prev_shift = st.selectbox(
+                "변경 유형을 선택하세요",
+                ["현업일근→21주기", "21주기→현업일근"],
+                key="designated_prev_shift_field"
+            )
+            calc_remaining_days = st.number_input(
+                "잔여 근무일수",
+                min_value=0,
+                max_value=31,
+                value=5,
+                step=1,
+                key="designated_remaining_field"
+            )
+            calc_data = calculate_designated_off(calc_case_type, calc_remaining_days, calc_prev_shift)
+
+        else:
+            calc_prev_shift = "통상/21주기→6주기"
+            calc_remaining_days = st.number_input(
+                "근무지 배치일 또는 잔여일수",
+                min_value=0,
+                max_value=31,
+                value=6,
+                step=1,
+                key="designated_remaining_6"
+            )
+            calc_data = calculate_designated_off(calc_case_type, calc_remaining_days, calc_prev_shift)
+
+    else:
+        user_text = st.text_input(
+            "문장으로 입력하세요",
+            placeholder="예: 21주기에서 21주기 주간에서 야간으로 바뀌고 잔여 근무일수는 4일이야",
+            key="designated_free_text"
+        )
+        parsed = parse_designated_off_text(user_text)
+        if parsed["case_type"] and parsed["remaining_days"] is not None:
+            calc_data = calculate_designated_off(parsed["case_type"], parsed["remaining_days"], parsed["prev_shift"], parsed["next_shift"])
+            st.caption(
+                f"해석된 입력값: {parsed['case_type']} / {parsed['prev_shift']}"
+                + (f" → {parsed['next_shift']}" if parsed["next_shift"] else "")
+                + f" / 잔여 근무일수 {parsed['remaining_days']}일"
+            )
+        else:
+            calc_data = {
+                "result": "계산 대기",
+                "reason": "문장에서 변경 유형 또는 잔여 근무일수를 찾지 못했습니다.",
+                "rule": "예시처럼 ‘주간에서 야간’, ‘4일’처럼 입력해 주세요."
+            }
+
+    st.success(f"자동 판단 결과: {calc_data['result']}")
+    st.write(f"**판단 이유**: {calc_data['reason']}")
+    st.write(f"**적용 근거**: {calc_data['rule']}")
+    st.caption("이 계산기는 현재 앱에 입력된 지정휴무 표 기준으로 자동 판단합니다. 최종 적용 전 실제 근무표와 인사이동 기준을 함께 확인하세요.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
     st.markdown("### 실무 포인트")
     st.markdown("<div class='warn-box'>", unsafe_allow_html=True)
     for item in work_designated_off_data["note"]:
@@ -705,9 +896,7 @@ elif main_menu == "근무제도" and sub_menu == "지정휴무":
     st.write("4. 발생 여부를 확인한 뒤 실제 근무표와 인사이동 기준을 함께 검토합니다.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.divider()
-    st.success("근무제도 메뉴는 현재 기준으로 근무일과 휴일부터 지정휴무까지 모두 구현되었습니다.")
-    st.info("다음 단계에서는 휴가제도 화면을 같은 구조로 이어서 만들면 됩니다.")
+    
 
 else:
     st.markdown("## 준비 중")
