@@ -1,1091 +1,923 @@
 import streamlit as st
-
-st.set_page_config(page_title="복무관리 매뉴얼 앱", page_icon="📘", layout="wide")
-
-# -----------------------------
-# 데이터
-# -----------------------------
-APP_TITLE = "복무관리 메뉴얼 앱"
-APP_SUBTITLE = "근무제도 > 근무일과 휴일"
-
-workday_holiday_data = {
-    "title": "근무일과 휴일",
-    "one_line_summary": "근무일은 휴일·휴무일을 제외한 날이고, 휴일은 근무형태에 따라 다르게 적용됩니다.",
-    "definitions": {
-        "근무일": "취업규칙상 정해진 근무시간 중 휴일 및 휴무일을 제외한 날",
-        "휴일(휴무일)": "취업규칙에 따라 근로의무가 없는 날"
-    },
-    "work_types": [
-        {
-            "name": "통상근무",
-            "summary": "가장 일반적인 형태",
-            "holidays": ["토요일(무급휴일)", "일요일"],
-            "practical": "사무직처럼 달력 기준으로 이해하면 가장 쉽습니다."
-        },
-        {
-            "name": "현업일근",
-            "summary": "요일 고정형이 아니라 지정형 휴무",
-            "holidays": ["지정휴무: 주 2일", "연중지휴: 월 1일"],
-            "practical": "달력보다 소속 부서의 지정 기준과 운영계획을 먼저 확인해야 합니다."
-        },
-        {
-            "name": "교대근무",
-            "summary": "요일보다 근무주기와 근무표가 중요",
-            "holidays": [
-                "6주기: 근무형태에서 발생되는 6주기당 2일",
-                "지정휴무: 월 2일(주A 1일, 주B 1일)",
-                "분기지휴: 8일(분기당 2일)",
-                "21주기: 지정휴무 21주기당 2일(야간 2일 지정 불가)",
-                "야간근무 후 휴일",
-                "분기지휴: 4일(분기당 1일)"
-            ],
-            "practical": "일요일이라고 무조건 쉬는 개념이 아니라 근무표상 휴일인지 먼저 봐야 합니다."
-        },
-        {
-            "name": "교번근무",
-            "summary": "기관사 등 근무표 기반 운영",
-            "holidays": ["근무표에 의한 휴일", "대기휴무 등 발생된 휴일", "분기지휴: 4일(분기당 1일)"],
-            "practical": "근무표가 사실상 기준표 역할을 합니다."
-        }
-    ],
-    "public_holiday_rule": "법령 및 정부에서 정한 공휴일과 공사창립일은 유급휴일로 부여하되, 교대·교번근무자는 근무형태에서 발생된 휴일로, 현업일근자는 지정된 휴무일로 대체합니다. 단, 근로자의 날(5.1)은 휴일근무수당 지급 대상입니다.",
-    "substitute_holiday": "명절휴일이 공휴일과 겹치거나 3·1절, 광복절, 개천절, 한글날, 어린이날이 토요일 또는 다른 공휴일과 겹치면 다음 첫 번째 비공휴일을 공휴일로 합니다. 이 기준은 통상근무자 이해에 특히 중요합니다.",
-    "mistakes": [
-        "공휴일이면 모든 직원이 같은 방식으로 쉬는 것은 아닙니다.",
-        "교대·교번근무는 달력보다 근무표가 우선입니다.",
-        "근로자의 날은 일반 공휴일과 동일하게 보면 실무상 오류가 생길 수 있습니다."
-    ],
-    "faq": [
-        {
-            "q": "일요일이면 무조건 휴일인가요?",
-            "a": "통상근무자는 일반적으로 그렇지만, 교대·교번근무자는 근무표에 따라 일요일에도 근무할 수 있습니다."
-        },
-        {
-            "q": "공휴일은 현업일근도 그냥 쉬나요?",
-            "a": "아닙니다. 현업일근은 지정된 휴무일로 대체되는 구조를 먼저 확인해야 합니다."
-        },
-        {
-            "q": "제일 먼저 뭘 확인해야 하나요?",
-            "a": "해당 직원의 근무형태가 통상근무인지, 현업일근인지, 교대근무인지, 교번근무인지부터 확인하는 것이 가장 중요합니다."
-        }
-    ]
-}
-
-worktime_break_data = {
-    "title": "근무시간과 휴게시간",
-    "one_line_summary": "기본은 1일 8시간, 1주 40시간이며, 근무형태별로 근무시간과 휴게시간이 다르고 변경·탄력근로 운용에도 제한이 있습니다.",
-    "basic_rules": [
-        "근무시간은 1일 8시간, 1주 40시간입니다.",
-        "1주는 휴일을 포함한 7일(월~일) 기준입니다.",
-        "휴게시간은 업무에 지장을 초래하지 않는 범위 내에서 자유롭게 사용할 수 있습니다.",
-        "분야별 근무형태, 근무시간 및 휴게시간은 취업규칙 별표 1에 따르며, 계절 변화나 업무 특수사정이 있으면 조정할 수 있습니다."
-    ],
-    "work_types": [
-        {"name": "통상근무", "time": "월~금 09:00~18:00", "break": "1시간 (12:00~13:00)", "actual": "8시간", "cycle": "일반 주간근무"},
-        {"name": "현업일근", "time": "09:00~18:00", "break": "1시간 (12:00~13:00)", "actual": "8시간", "cycle": "주 단위"},
-        {"name": "3호선 역순회요원 (3조2교대)", "time": "주간A 05:20~14:50 / 주간B 14:00~24:30", "break": "각 1시간", "actual": "주간A 8.5시간 / 주간B 9.5시간", "cycle": "6일 주기"},
-        {"name": "역무·관제·통신·변전·차량운영·전자(AFC)", "time": "주간 09:00~18:00 / 야간 18:00~익일 09:00", "break": "주간 1시간 / 야간 4시간 30분", "actual": "주간 8시간 / 야간 10.5시간", "cycle": "21일 주기"},
-        {"name": "전자(PSD)·전기·신호·건축·토목·기계", "time": "주간 09:00~18:00 / 야간 18:00~익일 09:00", "break": "주간 1시간 / 야간 4시간 30분", "actual": "주간 8시간 / 야간 10.5시간", "cycle": "21일 주기"},
-        {"name": "차량검수", "time": "주간 09:00~18:00 / 야간 18:00~익일 09:00", "break": "주간 1시간 / 야간 4시간 30분", "actual": "주간 8시간 / 야간 10.5시간", "cycle": "21일 주기"},
-        {"name": "운행관리(운용)", "time": "주간 09:00~18:00 / 야간 18:00~익일 09:00", "break": "주간 1시간 / 야간 4시간 30분", "actual": "주간 8시간 / 야간 10.5시간", "cycle": "21일 주기"},
-        {"name": "야간격일제", "time": "18:00~익일 09:00", "break": "4시간 30분", "actual": "10.5시간", "cycle": "2일 주기"},
-        {"name": "교번근무 (1,2호선 차량운영 기관사)", "time": "기관사 근무표에 의함", "break": "교번운용표에 의함", "actual": "교번운용표에 의함", "cycle": "교번운용표 기준"}
-    ],
-    "change_rules": [
-        "단위기간 내 지정된 근무일과 근로시간은 원칙적으로 변경이 제한됩니다.",
-        "현업 운영상 부득이하여 변경하지 않으면 본래 업무를 달성할 수 없는 경우에만 예외적으로 변경할 수 있습니다.",
-        "기본적인 근무형태가 1주일 이상 변경되면 노무복지팀장 협조결재 후 변경 가능합니다.",
-        "탄력근로 범위 내에서도 1일 최대근로시간은 12시간을 넘지 않아야 합니다.",
-        "휴게시간은 반드시 근무시간 도중에 주어져야 하며, 현업상 부득이한 경우 소속부서장이 조정운용할 수 있습니다."
-    ],
-    "flex_rules": [
-        "공사는 1개월 단위 탄력적 근로시간제를 운영합니다. 단, 교번근무자 및 3호선 차량검수 분야는 3개월 이내 단위입니다.",
-        "단위기간 평균 1주 40시간을 초과하지 않는 범위에서 특정 주 52시간, 특정 일 12시간까지 근무할 수 있습니다.",
-        "업무상 필요 시 연장근무, 야간근무, 휴일근무를 명할 수 있으며 보수규정에 따라 수당이 지급됩니다.",
-        "야간근무는 오후 10시부터 오전 6시까지 사이의 근로를 뜻합니다."
-    ],
-    "overtime_notes": [
-        "휴일대체 및 평일 연장근무는 해당 주 총근로시간이 주52시간 범위 내여야 합니다.",
-        "해당 1개월을 평균한 1주 소정근로시간도 평균 40시간 이내여야 합니다.",
-        "휴일대체는 직원에게 사전 24시간 이전에 교체할 휴일을 특정하여 고지해야 합니다.",
-        "평일(무급휴무일 포함) 8시간 미만 연장근무 시에는 범위 초과근로가 발생하지 않는 범위 내에서 근로시간의 1.5배만큼 면제할 수 있습니다.",
-        "관리·감독업무 수행 관리자 등은 초과근무수당 지급 제외 대상이므로 근로시간면제 대상에서도 제외됩니다."
-    ],
-    "restriction_table": [
-        ["남성근로자", "1주 40시간(1일 8시간)", "1주 12시간", "가능", "합의"],
-        ["여성근로자", "1주 40시간(1일 8시간)", "1주 12시간", "동의", "동의"],
-        ["임신 중인 여성근로자", "1주 40시간(1일 8시간)", "금지", "명시적 청구 + 노동부 인가", "명시적 청구 + 노동부 인가"],
-        ["출산 후 1년 이하 여성근로자", "1주 40시간(1일 8시간)", "1주 6시간 (1일 2시간, 1년 150시간)", "동의 + 노동부 인가", "동의 + 노동부 인가"],
-        ["18세 미만자(연소자)", "1주 35시간(1일 7시간)", "1주 5시간(1일 1시간)", "동의 + 노동부 인가", "동의 + 노동부 인가"],
-        ["단시간근로자", "1주 40시간(1일 8시간)", "1주 12시간", "가능", "합의"],
-        ["임신기근로시간 단축", "1일 2시간 이내 단축(최저 1일 6시간)", "금지", "명시적 청구 + 노동부 인가", "명시적 청구 + 노동부 인가"],
-        ["육아기근로시간 단축", "1주 15시간~35시간", "1주 12시간", "가능", "합의"]
-    ],
-    "faq": [
-        {"q": "기본 근무시간은 무조건 09:00~18:00인가요?", "a": "아닙니다. 통상근무와 현업일근은 그렇지만 교대·교번·야간격일제는 분야별 근무표와 주기에 따라 다릅니다."},
-        {"q": "휴게시간은 꼭 점심시간처럼 한 번에 줘야 하나요?", "a": "원칙은 근무시간 도중 부여이며, 현업 운영상 부득이한 경우에는 소속부서장이 조정하거나 일정 부분 단속적으로 부여할 수 있습니다."},
-        {"q": "탄력근로를 하면 마음대로 오래 근무해도 되나요?", "a": "아닙니다. 평균 주40시간, 특정 주52시간, 특정 일12시간 한도 안에서만 가능합니다."}
-    ]
-}
-
-work_overtime_data = {
-    "title": "휴일대체근무제도",
-    "one_line_summary": "연장근무·야간근무·휴일근무는 시간대와 근무시간에 따라 보상휴가Ⅱ 또는 대체휴일로 처리되며, 사전 고지와 시간 기준 확인이 핵심입니다.",
-    "overview": [
-        "연장근무는 정해진 근로시간을 초과하는 시간이며 해당 시간의 1.5배를 보상합니다.",
-        "야간근무는 22:00부터 06:00까지의 근로시간이며 해당 시간의 0.5배를 보상합니다.",
-        "연장근로이면서 야간근로에 해당하면 연장·야간 모두 보상합니다."
-    ],
-    "overtime_by_type": [
-        ["통상근무자", "8시간을 초과하는 시간"],
-        ["교대 21일·8일주기", "주간 8시간 초과 / 야간 10.5시간 초과"],
-        ["교대 6일주기", "주간A 8.5시간 초과 / 주간B 9.5시간 초과"]
-    ],
-    "overtime_rules": [
-        "연장근무는 1주 12시간을 초과할 수 없습니다.",
-        "휴게시간은 4시간에 30분 이상, 8시간에 1시간 이상을 준수해야 합니다.",
-        "연장근무 사유가 생기면 휴게시간을 조정해 가급적 연장근무가 발생하지 않도록 해야 합니다.",
-        "조정이 불가하면 보상휴가Ⅱ를 부여합니다.",
-        "취업규칙에 정한 시간 외의 야간근무는 보상휴가Ⅱ 부여가 원칙이고, 야간수당은 근무계획 수립 시 노무복지팀 협조를 받은 경우 지급 가능합니다."
-    ],
-    "comp_leave": [
-        "연장·야간근무에 가산율을 적용해 휴가를 부여합니다.",
-        "연장근무: 해당 시간의 1.5배",
-        "야간근무: 해당 시간의 0.5배",
-        "연장근무와 야간근무 중복 시: 2.0배",
-        "사유별 발생 휴가는 적치 가능합니다.",
-        "당해연도 발생 휴가는 익년도 12월 31일까지 사용합니다.",
-        "휴가는 '일' 또는 '반일' 사용이 원칙이며, 시간 단위 사용 시 출퇴근 시간 조정을 시행합니다."
-    ],
-    "holiday_substitution": [
-        "통상근무자의 휴(무)일 근무가 예정된 경우 사전에 다른 근무일을 휴일로 지정하는 제도입니다.",
-        "사전에 대체휴일을 지정하면 원래의 휴일은 근무일이 됩니다.",
-        "5시간 미만 근무 시에는 휴일대체가 아니라 보상휴가Ⅱ 기준을 적용합니다.",
-        "휴일대체는 당초 휴일의 24시간 전까지 직원에게 사실을 고지해야 합니다.",
-        "직원의 의견을 반영해 대체할 휴일을 특정해야 합니다."
-    ],
-    "holiday_substitution_table": [
-        ["5시간 이하 근무", "근무시간의 1.5배 보상휴가Ⅱ 적용"],
-        ["6시간 초과~8시간 이하", "대체휴일 1일 부여"],
-        ["8시간 초과 근무", "대체휴일 1일 + 초과시간의 1.5배 보상휴가Ⅱ"]
-    ],
-    "holiday_use": [
-        "대체휴일은 근무일 이전 5일부터 근무일 이후 5일까지 사용합니다.",
-        "교육·출장 등 부득이한 사유로 기간 내 사용이 불가하면 당초 휴일로부터 1개월 내 사용 가능합니다."
-    ],
-    "attendance_processing": {
-        "basic": [
-            "연장근로에 대한 보상휴가Ⅱ는 익일 근무에 사용합니다.",
-            "초과근무가 00시 이후 종료되면 휴식시간 부여를 위해 오전근무 면제가 원칙입니다.",
-            "야간근로에 대한 보상휴가Ⅱ는 적치하여 익년도 말까지 사용합니다."
-        ],
-        "after_midnight_start": [
-            "초과근무가 00시 이후 시작되어 09시 이전 종료되면 새벽근무 당일 오전근무를 면제합니다.",
-            "실근로시간만큼 새벽근무 당일 오후근무도 면제합니다.",
-            "야간근로 보상휴가Ⅱ는 적치하여 익년도 말까지 사용합니다."
-        ],
-        "cross_midnight_workday": [
-            ["2.5시간 초과", "당일 통상근무에서 초과시간만큼 제외 + 익일 근로면제 + 야간근로 보상휴가Ⅱ 적치"],
-            ["2.5시간", "당일 조정 없음 + 익일 근로면제 + 야간근로 보상휴가Ⅱ 적치"],
-            ["2.5시간 미만", "당일 조정 없음 + 익일 오전근무 면제 + 연장근무 보상휴가Ⅱ는 익일 오후 사용 + 야간근로 보상휴가Ⅱ 적치"]
-        ],
-        "cross_midnight_holiday": [
-            ["2.5시간 초과", "당일 통상근무에서 초과시간만큼 제외 + 연장근무 보상휴가Ⅱ 익년도 말까지 사용 + 야간근로 보상휴가Ⅱ 적치"],
-            ["2.5시간", "당일 조정 없음 + 연장근무 보상휴가Ⅱ 익년도 말까지 사용 + 야간근로 보상휴가Ⅱ 적치"],
-            ["2.5시간 미만", "당일 조정 없음 + 연장근무 보상휴가Ⅱ 익년도 말까지 사용 + 야간근로 보상휴가Ⅱ 적치"]
-        ]
-    },
-    "qa": [
-        {"q": "보상휴가Ⅱ 적용 대상은?", "a": "통상근무자뿐 아니라 교대근무자도 적용 대상이며, 취업규칙 등에 정해진 근로시간보다 초과해 근무하게 될 경우 보상휴가Ⅱ를 적용할 수 있습니다."},
-        {"q": "야간감독 등이 2.5시간 초과할 경우 당일 근로면제 방법은?", "a": "초과하는 시간만큼 조기퇴근, 휴게시간 조정 등 부서 내 사정에 따라 조정 가능합니다."},
-        {"q": "보상휴가Ⅱ 사용방법은?", "a": "기존 보상휴가 상황관리부를 활용하여 적치 관리하고, 반일 또는 1일 단위 주간근무 사용을 원칙으로 하되 인력운용과 부서 사정을 고려해 반일 미만도 사용할 수 있습니다."},
-        {"q": "오전근무, 오후근무의 기준은?", "a": "반일휴가 기준을 준용하여 오전근무는 09:00~13:30, 오후근무는 13:30~18:00으로 봅니다."}
-    ]
-}
-
-work_change_data = {
-    "title": "근무형태 변경시 처리",
-    "one_line_summary": "근무형태 변경 시 변경된 근무를 즉시 적용하며, 변경 전 야간근무에 대한 휴무 보장과 주휴일 확보가 핵심입니다.",
-    "basic_rules": [
-        "근무형태 변경 시에는 변경된 근무를 그대로 적용합니다.",
-        "변경 전 야간근무로 인해 발생한 휴무일은 반드시 보장합니다.",
-        "근로기준법 및 취업규칙에 따라 1주(월~일)에 주휴일 1일을 반드시 보장해야 합니다."
-    ],
-    "case_21": [
-        ["통상 → 21주기", "통상", "주간/야간/휴일", "동일 적용"],
-        ["21주기 → 21주기 (주간)", "주간", "야간/휴일", "동일 적용"],
-        ["21주기 → 21주기 (야간)", "야간", "주간", "휴일 전환"],
-        ["21주기 → 통상", "주간/야간/휴일", "통상", "통상 또는 휴일 적용"]
-    ],
-    "case_6": [
-        ["통상 → 6주기", "통상", "주간A/B/비번/휴일", "변경근무 적용"],
-        ["6주기 → 6주기", "주A1/주A2/주B1/주B2", "순환", "근무표 기준"],
-        ["6주기 → 통상", "주B2", "통상", "비번 또는 통상"]
-    ],
-    "case_mix": [
-        ["6주기 → 21주기", "변경된 근무형태 따름", "주간A/B/비번/휴일", "동일 적용"],
-        ["21주기 → 6주기 (야간)", "야간", "주간A/B/비번", "휴일 후 전환"],
-        ["21주기 → 6주기 (휴일)", "휴일", "주간A/B", "동일 적용"]
-    ],
-    "note": [
-        "주간 근무의 경우 소속장 인력운용 상황에 따라 주A, 주B를 적의 운영합니다.",
-        "세부 근무 적용은 실제 근무표 및 인사이동 기준을 함께 확인해야 정확합니다."
-    ]
-}
-
-work_designated_off_data = {
-    "title": "지정휴무",
-    "one_line_summary": "근무형태 변경 시 지정휴무는 ‘잔여 근무일수 + 변경 유형’으로 결정된다.",
-
-    "concept": [
-        "주 1회 주휴일 보장은 무조건 적용",
-        "21주기 근무자는 지정휴무 2일 중 1일은 주휴 개념으로 사용"
-    ],
-
-    "grant_rules": [
-        "현업일근: 주 2일 지정휴무",
-        "6주기: 월 2일 (주A 1일, 주B 1일)",
-        "21주기: 총 2일 (주야 구분 없음)",
-        "교번근무: 분기/연간 기준 관리"
-    ],
-
-    "usage_rules": [
-        "지정휴무는 해당 월 또는 주기 내 반드시 사용",
-        "미사용 시 소멸 (이월 불가)",
-        "사용계획은 사전 승인 필요",
-        "변경 시 본인 동의 필요"
-    ],
-
-    "case_21": [
-        ["통상 → 21주기", "조건 무관", "2일 발생"],
-        ["주간 → 야간", "4일 이상", "1일 발생"],
-        ["주간 → 야간", "3일 이하", "미발생"],
-        ["야간 → 주간", "3일 이상", "2일 발생"],
-        ["야간 → 주간", "2일 이하", "1일 발생"]
-    ],
-
-    "case_field": [
-        ["현업일근 → 21주기", "5일 이상", "2일 발생"],
-        ["현업일근 → 21주기", "4일 이하", "1일 발생"],
-        ["21주기 → 현업일근", "5일 이상", "2일 발생"],
-        ["21주기 → 현업일근", "4일 이하", "1일 발생"]
-    ],
-
-    "case_6": [
-        ["통상/21주기 → 6주기", "1~6일", "월 2회"],
-        ["통상/21주기 → 6주기", "7~20일", "월 1회"],
-        ["통상/21주기 → 6주기", "21일 이상", "미발생"]
-    ],
-
-    "note": [
-        "지정휴무는 ‘잔여 근무일수’가 핵심 판단 기준",
-        "근무표 + 인사이동 기준 같이 봐야 정확",
-        "현장에서 가장 많이 틀리는 파트"
-    ]
-}
-
+from datetime import date, timedelta
+from typing import Callable, Dict, List, Optional
 import re
 
-def parse_designated_off_text(user_text: str):
-    text = user_text.replace(" ", "")
-    case_type = None
-    prev_shift = ""
-    next_shift = ""
-    remaining_days = None
+# =========================================================
+# 복무관리 매뉴얼 앱 - 실무형 정리본
+# 목적:
+# - 현장 서무가 빠르게 찾고
+# - 자동 판단 결과를 바로 보고
+# - DRIMS 처리 경로까지 확인할 수 있도록 구성
+#
+# 사용 방법:
+# 1) 이 파일을 app.py로 저장
+# 2) 기존에 만들어 둔 세부 데이터/계산식이 있으면 아래 데이터 영역에 계속 붙여 넣어 확장
+# 3) 현재 버전은 실무형 UX 구조 + 핵심 페이지 샘플 + 확장 가능한 렌더 구조까지 정리한 통합본
+# =========================================================
 
-    if "현업일근" in text:
-        case_type = "현업일근 기준"
-        if "현업일근" in text and "21주기" in text:
-            if text.index("현업일근") < text.index("21주기"):
-                prev_shift = "현업일근→21주기"
-            else:
-                prev_shift = "21주기→현업일근"
-    elif "6주기" in text:
-        case_type = "6주기 기준"
-        prev_shift = "통상/21주기→6주기"
-    elif "21주기" in text:
-        case_type = "21주기 기준"
-        if "통상" in text and "21주기" in text:
-            prev_shift = "통상→21주기"
-        elif "주간" in text and "야간" in text:
-            if text.index("주간") < text.index("야간"):
-                prev_shift = "주간"
-                next_shift = "야간"
-            else:
-                prev_shift = "야간"
-                next_shift = "주간"
+st.set_page_config(
+    page_title="복무관리 매뉴얼",
+    page_icon="📘",
+    layout="centered",
+    initial_sidebar_state="expanded",
+)
 
-    match = re.search(r"([0-9]+)일", text)
-    if match:
-        remaining_days = int(match.group(1))
-
-    return {
-        "case_type": case_type,
-        "prev_shift": prev_shift,
-        "next_shift": next_shift,
-        "remaining_days": remaining_days,
-    }
-
-
-def calculate_designated_off(case_type: str, remaining_days: int, prev_shift: str = "", next_shift: str = ""):
-    result = {
-        "result": "계산할 수 없습니다.",
-        "reason": "입력값이 부족하거나 현재 규칙에 없는 조합입니다.",
-        "rule": "지정휴무 표 기준을 다시 확인하세요."
-    }
-
-    if case_type == "21주기 기준":
-        if prev_shift == "통상→21주기":
-            result["result"] = "2일 발생"
-            result["reason"] = "통상에서 21주기로 변경되는 경우는 잔여근무일수와 관계없이 2일 발생 기준입니다."
-            result["rule"] = "21주기당 지정휴무 사용기준: 통상 → 21주기(주간) 시 2일 발생"
-            return result
-        if prev_shift == "주간" and next_shift == "야간":
-            if remaining_days >= 4:
-                result["result"] = "1일 발생"
-                result["reason"] = f"주간에서 야간으로 변경되고 잔여근무일수가 {remaining_days}일이므로 4일 이상 기준에 해당합니다."
-            else:
-                result["result"] = "미발생"
-                result["reason"] = f"주간에서 야간으로 변경되고 잔여근무일수가 {remaining_days}일이므로 3일 이하 기준에 해당합니다."
-            result["rule"] = "21주기 기준: 주간 → 야간, 4일 이상 1일 발생 / 3일 이하 미발생"
-            return result
-        if prev_shift == "야간" and next_shift == "주간":
-            if remaining_days >= 3:
-                result["result"] = "2일 발생"
-                result["reason"] = f"야간에서 주간으로 변경되고 잔여근무일수가 {remaining_days}일이므로 3일 이상 기준에 해당합니다."
-            else:
-                result["result"] = "1일 발생"
-                result["reason"] = f"야간에서 주간으로 변경되고 잔여근무일수가 {remaining_days}일이므로 2일 이하 기준에 해당합니다."
-            result["rule"] = "21주기 기준: 야간 → 주간, 3일 이상 2일 발생 / 2일 이하 1일 발생"
-            return result
-
-    if case_type == "현업일근 기준" and prev_shift in ["현업일근→21주기", "21주기→현업일근"]:
-        if remaining_days >= 5:
-            result["result"] = "2일 발생"
-            result["reason"] = f"{prev_shift} 변경이고 잔여근무일수가 {remaining_days}일이므로 5일 이상 기준입니다."
-        else:
-            result["result"] = "1일 발생"
-            result["reason"] = f"{prev_shift} 변경이고 잔여근무일수가 {remaining_days}일이므로 4일 이하 기준입니다."
-        result["rule"] = "현업일근 기준: 5일 이상 2일 발생 / 4일 이하 1일 발생"
-        return result
-
-    if case_type == "6주기 기준" and prev_shift == "통상/21주기→6주기":
-        if 1 <= remaining_days <= 6:
-            result["result"] = "월 2회"
-            result["reason"] = f"배치일 또는 잔여일수가 {remaining_days}일이므로 1~6일 구간입니다."
-        elif 7 <= remaining_days <= 20:
-            result["result"] = "월 1회"
-            result["reason"] = f"배치일 또는 잔여일수가 {remaining_days}일이므로 7~20일 구간입니다."
-        else:
-            result["result"] = "미발생"
-            result["reason"] = f"배치일 또는 잔여일수가 {remaining_days}일이므로 21일 이상 구간입니다."
-        result["rule"] = "6주기 기준: 1~6일 월 2회 / 7~20일 월 1회 / 21일 이상 미발생"
-        return result
-
-    return result
-
-import re
-
-
-def parse_designated_off_text(user_text: str):
-    text = user_text.replace(" ", "")
-    case_type = None
-    prev_shift = ""
-    next_shift = ""
-    remaining_days = None
-    prior_used_days = None
-    prior_weekday_days = None
-    changed_work_type = ""
-
-    if "현업일근" in text:
-        case_type = "현업일근 기준"
-        if "현업일근" in text and "21주기" in text:
-            if text.index("현업일근") < text.index("21주기"):
-                prev_shift = "현업일근→21주기"
-            else:
-                prev_shift = "21주기→현업일근"
-    elif "6주기" in text:
-        case_type = "6주기 기준"
-        if ("통상" in text or "21주기" in text) and "6주기" in text:
-            prev_shift = "통상/21주기→6주기"
-        elif "6주기" in text and "21주기" in text:
-            prev_shift = "6주기→21주기"
-    elif "교번근무" in text or "교번" in text:
-        case_type = "분기연간 기준"
-        if "21주기" in text and ("교번근무" in text or "교번" in text):
-            changed_work_type = "21주기↔교번"
-    elif "21주기" in text:
-        case_type = "21주기 기준"
-        if "통상" in text and "21주기" in text:
-            prev_shift = "통상→21주기"
-        elif "주간" in text and "야간" in text:
-            if text.index("주간") < text.index("야간"):
-                prev_shift = "주간"
-                next_shift = "야간"
-            else:
-                prev_shift = "야간"
-                next_shift = "주간"
-        elif "주간근무" in text and ("교대" in text or "교번" in text or "통상" in text):
-            prev_shift = "21주기주간→기타"
-            if "교대" in text:
-                changed_work_type = "교대근무"
-            elif "교번" in text:
-                changed_work_type = "교번근무"
-            elif "통상" in text:
-                changed_work_type = "통상근무"
-
-    day_matches = re.findall(r"([0-9]+)일", text)
-    if day_matches:
-        remaining_days = int(day_matches[0])
-        if len(day_matches) > 1:
-            prior_used_days = int(day_matches[1])
-    week_matches = re.findall(r"([0-9]+)일내|([0-9]+)일이상", text)
-    _ = week_matches
-
-    if "주간근무일수" in text:
-        match = re.search(r"주간근무일수[^0-9]*([0-9]+)", text)
-        if match:
-            prior_weekday_days = int(match.group(1))
-
-    return {
-        "case_type": case_type,
-        "prev_shift": prev_shift,
-        "next_shift": next_shift,
-        "remaining_days": remaining_days,
-        "prior_used_days": prior_used_days,
-        "prior_weekday_days": prior_weekday_days,
-        "changed_work_type": changed_work_type,
-    }
-
-
-
-def calculate_designated_off(case_type: str, remaining_days: int | None = None, prev_shift: str = "", next_shift: str = "", prior_used_days: int | None = None, prior_weekday_days: int | None = None, changed_work_type: str = ""):
-    result = {
-        "result": "계산할 수 없습니다.",
-        "reason": "입력값이 부족하거나 현재 규칙에 없는 조합입니다.",
-        "rule": "지정휴무 표 기준을 다시 확인하세요."
-    }
-
-    if case_type == "21주기 기준":
-        if prev_shift == "통상→21주기":
-            result["result"] = "2일 발생"
-            result["reason"] = "통상 또는 21주기에서 21주기 주간근무로 전환되는 경우 잔여근무일수와 무관하게 2일 발생 기준입니다."
-            result["rule"] = "21주기당 지정휴무 사용기준: 통상 or 21주기 ⇒ 21주기(주간) 시 2일 발생"
-            return result
-
-        if prev_shift == "주간" and next_shift == "야간" and remaining_days is not None:
-            if remaining_days >= 4:
-                result["result"] = "1일 발생"
-                result["reason"] = f"21주기 주간에서 야간으로 변경되고 변경 후 잔여근무일수가 {remaining_days}일이므로 4일 이상 기준입니다."
-            else:
-                result["result"] = "미발생"
-                result["reason"] = f"21주기 주간에서 야간으로 변경되고 변경 후 잔여근무일수가 {remaining_days}일이므로 3일 이하 기준입니다."
-            result["rule"] = "21주기당 지정휴무 사용기준: 교대(주간) → 교대(야간), 4일 이상 1일 발생 / 3일 이하 미발생"
-            return result
-
-        if prev_shift == "야간" and next_shift == "주간" and remaining_days is not None:
-            if remaining_days >= 3:
-                result["result"] = "2일 발생"
-                result["reason"] = f"21주기 야간에서 주간으로 변경되고 변경 후 잔여근무일수가 {remaining_days}일이므로 3일 이상 기준입니다."
-            else:
-                result["result"] = "1일 발생"
-                result["reason"] = f"21주기 야간에서 주간으로 변경되고 변경 후 잔여근무일수가 {remaining_days}일이므로 2일 이하 기준입니다."
-            result["rule"] = "21주기당 지정휴무 사용기준: 교대(야간) → 교대(주간), 3일 이상 2일 발생 / 2일 이하 1일 발생"
-            return result
-
-        if prev_shift == "21주기주간→기타" and prior_weekday_days is not None:
-            if prior_weekday_days <= 3:
-                result["result"] = "미발생"
-                result["reason"] = f"21주기 주간근무에서 {changed_work_type}로 변경되었고 변경 전 주간 근무일수가 {prior_weekday_days}일이므로 3일 이내 기준입니다."
-            elif 4 <= prior_weekday_days <= 6:
-                result["result"] = "1일 발생"
-                result["reason"] = f"21주기 주간근무에서 {changed_work_type}로 변경되었고 변경 전 주간 근무일수가 {prior_weekday_days}일이므로 4~6일 이내 기준입니다."
-            else:
-                result["result"] = "2일 발생"
-                result["reason"] = f"21주기 주간근무에서 {changed_work_type}로 변경되었고 변경 전 주간 근무일수가 {prior_weekday_days}일이므로 7일 근무 기준입니다."
-            result["rule"] = "21주기 ⇒ 기타근무형태: 변경 전 주간 근무일수 3일 이내 미발생 / 4~6일 이내 1일 발생 / 7일 근무 2일 발생"
-            return result
-
-    if case_type == "현업일근 기준" and prev_shift in ["현업일근→21주기", "21주기→현업일근"] and remaining_days is not None:
-        if prev_shift == "현업일근→21주기":
-            if prior_used_days == 2:
-                result["result"] = "1일 발생"
-                result["reason"] = "현업일근에서 21주기(주간)로 변경 시 변경 전 지정휴무 사용일수 2일이면 1일 발생합니다."
-                result["rule"] = "현업일근 ⇒ 21주기(주간): 변경 전 지정휴무 사용일수 2일일 때 1일 발생"
-                return result
-            if prior_used_days is not None and prior_used_days <= 1:
-                result["result"] = "2일 발생"
-                result["reason"] = "현업일근에서 21주기(주간)로 변경 시 변경 전 지정휴무 사용일수 1일 이하이면 2일 발생합니다."
-                result["rule"] = "현업일근 ⇒ 21주기(주간): 변경 전 지정휴무 사용일수 1일 이하일 때 2일 발생"
-                return result
-            if remaining_days >= 4:
-                result["result"] = "1일 발생"
-                result["reason"] = f"현업일근에서 21주기(야간)로 변경되고 변경 후 잔여근무일수가 {remaining_days}일이므로 4일 이상 기준입니다."
-            else:
-                result["result"] = "미발생"
-                result["reason"] = f"현업일근에서 21주기(야간)로 변경되고 변경 후 잔여근무일수가 {remaining_days}일이므로 3일 이하 기준입니다."
-            result["rule"] = "현업일근 ⇒ 21주기(야간): 4일 이상 1일 발생 / 3일 이하 미발생"
-            return result
-
-        if prev_shift == "21주기→현업일근":
-            if remaining_days >= 5:
-                result["result"] = "2일 발생"
-                result["reason"] = f"21주기 등에서 현업일근으로 변경되고 변경 후 잔여근무일수가 {remaining_days}일이므로 5일 이상 기준입니다."
-            else:
-                result["result"] = "1일 발생"
-                result["reason"] = f"21주기 등에서 현업일근으로 변경되고 변경 후 잔여근무일수가 {remaining_days}일이므로 4일 이하 기준입니다."
-            result["rule"] = "교대·교번근무 ⇒ 현업일근: 5일 이상 2일 발생 / 4일 이하 1일 발생"
-            return result
-
-    if case_type == "6주기 기준" and prev_shift == "통상/21주기→6주기" and remaining_days is not None:
-        if 1 <= remaining_days <= 6:
-            result["result"] = "월 2회"
-            result["reason"] = f"통상/21주기에서 6주기로 변경 시 근무지 배치일 또는 잔여일수가 {remaining_days}일이므로 1~6일 구간입니다."
-        elif 7 <= remaining_days <= 20:
-            result["result"] = "월 1회"
-            result["reason"] = f"통상/21주기에서 6주기로 변경 시 근무지 배치일 또는 잔여일수가 {remaining_days}일이므로 7~20일 구간입니다."
-        else:
-            result["result"] = "미발생"
-            result["reason"] = f"통상/21주기에서 6주기로 변경 시 근무지 배치일 또는 잔여일수가 {remaining_days}일이므로 21일 이상 구간입니다."
-        result["rule"] = "6주기 지정휴무 사용기준: 1~6일 월 2회 / 7~20일 월 1회 / 21일 이상 미발생"
-        return result
-
-    if case_type == "분기연간 기준":
-        if changed_work_type == "21주기↔교번":
-            result["result"] = "분기지정휴무일수 통합 관리 / 연간지정휴무일수 통합 관리"
-            result["reason"] = "21주기와 교번 간 변경은 분기·연간 지정휴무를 각각 통합 관리합니다."
-            result["rule"] = "근무형태 변경 시 분기·연간 지정휴무 사용기준: 21주기 ↔ 교번은 분기지정휴무일수 통합 관리, 연간지정휴무일수 통합 관리"
-            return result
-
-    return result
-
-# -----------------------------
+# =========================================================
 # 스타일
-# -----------------------------
+# =========================================================
 CUSTOM_CSS = """
 <style>
+:root {
+    --line: #e5e7eb;
+    --text: #111827;
+    --muted: #6b7280;
+    --blue-bg: #eff6ff;
+    --blue-line: #2563eb;
+    --amber-bg: #fffbeb;
+    --amber-line: #f59e0b;
+    --green-bg: #ecfdf5;
+    --green-line: #10b981;
+    --card-bg: #ffffff;
+}
+html, body, [class*="css"] {
+    font-size: 16px;
+    color: var(--text);
+}
 .block-card {
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--line);
     border-radius: 16px;
-    padding: 18px 20px;
-    background: #ffffff;
-    margin-bottom: 14px;
+    padding: 16px 18px;
+    background: var(--card-bg);
+    margin-bottom: 12px;
 }
-.section-title {
-    font-size: 1.15rem;
-    font-weight: 700;
-    margin-bottom: 10px;
-}
-.point-box {
-    border-left: 5px solid #2563eb;
-    background: #eff6ff;
+.summary-box {
+    border-left: 5px solid var(--blue-line);
+    background: var(--blue-bg);
     padding: 14px 16px;
-    border-radius: 10px;
-    margin: 10px 0 16px 0;
+    border-radius: 12px;
+    margin: 8px 0 14px 0;
 }
 .warn-box {
-    border-left: 5px solid #f59e0b;
-    background: #fffbeb;
+    border-left: 5px solid var(--amber-line);
+    background: var(--amber-bg);
     padding: 14px 16px;
-    border-radius: 10px;
-    margin: 10px 0 16px 0;
+    border-radius: 12px;
+    margin: 8px 0 14px 0;
 }
-.small-muted {
-    color: #6b7280;
-    font-size: 0.92rem;
+.result-box {
+    border-left: 5px solid var(--green-line);
+    background: var(--green-bg);
+    padding: 14px 16px;
+    border-radius: 12px;
+    margin: 8px 0 14px 0;
+}
+.kpi-card {
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 12px 14px;
+    background: #fff;
+    min-height: 92px;
+}
+.kpi-label {
+    font-size: 0.9rem;
+    color: var(--muted);
+    margin-bottom: 6px;
+}
+.kpi-value {
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1.4;
+}
+.page-title {
+    font-size: 1.7rem;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+.page-caption {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin-bottom: 10px;
+}
+.section-title {
+    font-size: 1.08rem;
+    font-weight: 700;
+    margin: 10px 0 10px 0;
+}
+.quick-btn button {
+    width: 100%;
+    border-radius: 12px;
+    height: 44px;
+}
+@media (max-width: 900px) {
+    .page-title {
+        font-size: 1.45rem;
+    }
 }
 </style>
 """
-
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-# -----------------------------
-# 사이드바
-# -----------------------------
-with st.sidebar:
-    st.title("📘 복무관리")
-    st.caption("앱 시안 1차")
+# =========================================================
+# 공통 컴포넌트
+# =========================================================
+def render_page_header(title: str, breadcrumb: str, subtitle: Optional[str] = None):
+    st.markdown(f"<div class='page-title'>{title}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='page-caption'>{breadcrumb}</div>", unsafe_allow_html=True)
+    if subtitle:
+        render_summary_box("한눈에 보기", subtitle)
 
-    main_menu = st.radio(
-        "메뉴 선택",
-        ["근무제도", "휴가제도", "출장제도", "기타근태제도", "휴직제도"],
-        index=0
-    )
 
-    if main_menu == "근무제도":
-        sub_menu = st.radio(
-            "세부 항목",
-            [
-                "근무일과 휴일",
-                "근무시간과 휴게시간",
-                "휴일대체근무제도",
-                "근무형태 변경시 처리",
-                "지정휴무"
-            ],
-            index=0
-        )
-    else:
-        sub_menu = None
-
-# -----------------------------
-# 헤더
-# -----------------------------
-st.title(APP_TITLE)
-if sub_menu:
-    st.caption(f"{main_menu} > {sub_menu}")
-else:
-    st.caption(main_menu)
-
-# -----------------------------
-# 화면 렌더링
-# -----------------------------
-if main_menu == "근무제도" and sub_menu == "근무일과 휴일":
-    st.markdown(f"## {workday_holiday_data['title']}")
-
+def render_summary_box(title: str, text: str):
     st.markdown(
-        f"<div class='point-box'><b>한줄 핵심</b><br>{workday_holiday_data['one_line_summary']}</div>",
-        unsafe_allow_html=True
+        f"<div class='summary-box'><b>{title}</b><br>{text}</div>",
+        unsafe_allow_html=True,
     )
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>근무일이란?</div>", unsafe_allow_html=True)
-        st.write(workday_holiday_data["definitions"]["근무일"])
-        st.markdown("</div>", unsafe_allow_html=True)
 
-    with col2:
-        st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>휴일(휴무일)이란?</div>", unsafe_allow_html=True)
-        st.write(workday_holiday_data["definitions"]["휴일(휴무일)"])
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("### 근무형태별 휴일 정리")
-    selected_type = st.selectbox(
-        "근무형태를 선택하세요",
-        [item["name"] for item in workday_holiday_data["work_types"]]
-    )
-
-    selected_data = next(item for item in workday_holiday_data["work_types"] if item["name"] == selected_type)
-
-    st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-    st.markdown(f"<div class='section-title'>{selected_data['name']}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='small-muted'>{selected_data['summary']}</div>", unsafe_allow_html=True)
-    st.markdown("#### 휴일 기준")
-    for holiday in selected_data["holidays"]:
-        st.write(f"- {holiday}")
-    st.markdown("#### 실무 해석")
-    st.write(selected_data["practical"])
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("### 공휴일 처리")
-    st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-    st.write(workday_holiday_data["public_holiday_rule"])
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("### 대체공휴일")
-    st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-    st.write(workday_holiday_data["substitute_holiday"])
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("### 실무상 자주 틀리는 부분")
-    st.markdown("<div class='warn-box'>", unsafe_allow_html=True)
-    for item in workday_holiday_data["mistakes"]:
-        st.write(f"- {item}")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("### 자주 묻는 질문")
-    for item in workday_holiday_data["faq"]:
-        with st.expander(item["q"]):
-            st.write(item["a"])
-
-    
-
-elif main_menu == "근무제도" and sub_menu == "근무시간과 휴게시간":
-    st.markdown(f"## {worktime_break_data['title']}")
-
+def render_warning_box(title: str, items: List[str]):
+    joined = "".join([f"<li>{item}</li>" for item in items])
     st.markdown(
-        f"<div class='point-box'><b>한줄 핵심</b><br>{worktime_break_data['one_line_summary']}</div>",
-        unsafe_allow_html=True
+        f"<div class='warn-box'><b>{title}</b><ul>{joined}</ul></div>",
+        unsafe_allow_html=True,
     )
 
-    st.markdown("### 기본원칙")
-    st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-    for item in worktime_break_data["basic_rules"]:
-        st.write(f"- {item}")
+
+def render_result_panel(result: str, basis: str, next_step: str, caution: str):
+    st.markdown("<div class='result-box'>", unsafe_allow_html=True)
+    st.markdown(f"**결과**  \n{result}")
+    st.markdown(f"**적용 기준**  \n{basis}")
+    st.markdown(f"**후속 처리**  \n{next_step}")
+    st.markdown(f"**적용 시 유의사항**  \n{caution}")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("### 근무형태별 근무시간과 휴게시간")
-    selected_worktime_type = st.selectbox(
-        "분야/근무형태를 선택하세요",
-        [item["name"] for item in worktime_break_data["work_types"]],
-        key="worktime_type"
-    )
-    selected_time_data = next(item for item in worktime_break_data["work_types"] if item["name"] == selected_worktime_type)
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-        st.markdown(f"<div class='section-title'>{selected_time_data['name']}</div>", unsafe_allow_html=True)
-        st.write(f"**근무시간**: {selected_time_data['time']}")
-        st.write(f"**휴게시간**: {selected_time_data['break']}")
-        st.write(f"**실근무시간**: {selected_time_data['actual']}")
-        st.write(f"**근무주기**: {selected_time_data['cycle']}")
-        st.markdown("</div>", unsafe_allow_html=True)
-    with c2:
-        st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>실무 해석</div>", unsafe_allow_html=True)
-        st.write("이 화면은 해당 분야의 기본 근무틀을 빠르게 확인하는 용도입니다.")
-        st.write("실제 적용은 소속 분야, 근무표, 주기 운영기준까지 함께 확인해야 정확합니다.")
-        st.write("특히 교대·교번·야간격일제는 달력보다 근무표가 더 중요합니다.")
-        st.markdown("</div>", unsafe_allow_html=True)
+def render_drims_box(path_text: str, note: str = ""):
+    content = f"<b>DRIMS 처리 경로</b><br>{path_text}"
+    if note:
+        content += f"<br><span style='color:#6b7280'>{note}</span>"
+    st.markdown(f"<div class='block-card'>{content}</div>", unsafe_allow_html=True)
 
-    st.markdown("### 근무일·근무형태·근무시간·휴게시간 변경")
-    st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-    for item in worktime_break_data["change_rules"]:
-        st.write(f"- {item}")
-    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("### 탄력적 근로시간제")
-    st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-    for item in worktime_break_data["flex_rules"]:
-        st.write(f"- {item}")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("### 휴일대체 및 연장근로시 준수사항")
-    st.markdown("<div class='warn-box'>", unsafe_allow_html=True)
-    for item in worktime_break_data["overtime_notes"]:
-        st.write(f"- {item}")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("### 초과근무 제한 기준")
-    st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-    st.table({
-        "구분": [row[0] for row in worktime_break_data["restriction_table"]],
-        "법정 기준근로시간": [row[1] for row in worktime_break_data["restriction_table"]],
-        "연장근로": [row[2] for row in worktime_break_data["restriction_table"]],
-        "야간근로": [row[3] for row in worktime_break_data["restriction_table"]],
-        "휴일근로": [row[4] for row in worktime_break_data["restriction_table"]],
-    })
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("### 자주 묻는 질문")
-    for item in worktime_break_data["faq"]:
-        with st.expander(item["q"]):
-            st.write(item["a"])
-
-    
-
-elif main_menu == "근무제도" and sub_menu == "휴일대체근무제도":
-    st.markdown(f"## {work_overtime_data['title']}")
-
-    st.markdown(
-        f"<div class='point-box'><b>한줄 핵심</b><br>{work_overtime_data['one_line_summary']}</div>",
-        unsafe_allow_html=True
-    )
-
-    st.markdown("### 연장·야간근로 개요")
-    st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-    for item in work_overtime_data["overview"]:
-        st.write(f"- {item}")
-    st.markdown("#### 근무형태별 연장근무 기준")
-    st.table({
-        "근무형태": [row[0] for row in work_overtime_data["overtime_by_type"]],
-        "연장근무 시간": [row[1] for row in work_overtime_data["overtime_by_type"]],
-    })
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("### 연장근무 처리 기준")
-        st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-        for item in work_overtime_data["overtime_rules"]:
-            st.write(f"- {item}")
-        st.markdown("</div>", unsafe_allow_html=True)
-    with c2:
-        st.markdown("### 보상휴가Ⅱ 사용기준")
-        st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-        for item in work_overtime_data["comp_leave"]:
-            st.write(f"- {item}")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("### 휴일근무 처리 기준")
-    st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-    for item in work_overtime_data["holiday_substitution"]:
-        st.write(f"- {item}")
-    st.markdown("#### 휴일대체 근무제도 사용기준")
-    st.table({
-        "구분": [row[0] for row in work_overtime_data["holiday_substitution_table"]],
-        "사용 기준": [row[1] for row in work_overtime_data["holiday_substitution_table"]],
-    })
-    st.markdown("#### 대체휴일 사용방법")
-    for item in work_overtime_data["holiday_use"]:
-        st.write(f"- {item}")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("### 통상근무자 초과근무 시 근태처리")
-    tab1, tab2, tab3 = st.tabs(["기본원칙", "00시 이후 시작", "자정 걸침 처리"])
-
-    with tab1:
-        st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-        for item in work_overtime_data["attendance_processing"]["basic"]:
-            st.write(f"- {item}")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with tab2:
-        st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-        for item in work_overtime_data["attendance_processing"]["after_midnight_start"]:
-            st.write(f"- {item}")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with tab3:
-        st.markdown("#### 익일이 근무일인 경우")
-        st.table({
-            "실 근로시간": [row[0] for row in work_overtime_data["attendance_processing"]["cross_midnight_workday"]],
-            "근태 처리": [row[1] for row in work_overtime_data["attendance_processing"]["cross_midnight_workday"]],
-        })
-        st.markdown("#### 익일이 휴(무)일인 경우")
-        st.table({
-            "실 근로시간": [row[0] for row in work_overtime_data["attendance_processing"]["cross_midnight_holiday"]],
-            "근태 처리": [row[1] for row in work_overtime_data["attendance_processing"]["cross_midnight_holiday"]],
-        })
-
-    st.markdown("### 자주 묻는 질문")
-    for item in work_overtime_data["qa"]:
-        with st.expander(item["q"]):
-            st.write(item["a"])
-
-    
-
-elif main_menu == "근무제도" and sub_menu == "근무형태 변경시 처리":
-    st.markdown(f"## {work_change_data['title']}")
-
-    st.markdown(
-        f"<div class='point-box'><b>한줄 핵심</b><br>{work_change_data['one_line_summary']}</div>",
-        unsafe_allow_html=True
-    )
-
-    st.markdown("### 기본원칙")
-    st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-    for item in work_change_data["basic_rules"]:
-        st.write(f"- {item}")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("### 통상근무 ↔ 21주기 처리기준")
-    st.table({
-        "구분": [row[0] for row in work_change_data["case_21"]],
-        "변경 전": [row[1] for row in work_change_data["case_21"]],
-        "변경 당일": [row[2] for row in work_change_data["case_21"]],
-        "적용": [row[3] for row in work_change_data["case_21"]]
-    })
-
-    st.markdown("### 통상근무 ↔ 6주기 처리기준")
-    st.table({
-        "구분": [row[0] for row in work_change_data["case_6"]],
-        "변경 전": [row[1] for row in work_change_data["case_6"]],
-        "변경 당일": [row[2] for row in work_change_data["case_6"]],
-        "적용": [row[3] for row in work_change_data["case_6"]]
-    })
-
-    st.markdown("### 21주기 ↔ 6주기 처리기준")
-    st.table({
-        "구분": [row[0] for row in work_change_data["case_mix"]],
-        "변경 전": [row[1] for row in work_change_data["case_mix"]],
-        "변경 당일": [row[2] for row in work_change_data["case_mix"]],
-        "적용": [row[3] for row in work_change_data["case_mix"]]
-    })
-
-    st.markdown("### 실무 참고")
-    st.markdown("<div class='warn-box'>", unsafe_allow_html=True)
-    for item in work_change_data["note"]:
-        st.write(f"- {item}")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    
-
-elif main_menu == "근무제도" and sub_menu == "지정휴무":
-    st.markdown(f"## {work_designated_off_data['title']}")
-
-    st.markdown(
-        f"<div class='point-box'><b>한줄 핵심</b><br>{work_designated_off_data['one_line_summary']}</div>",
-        unsafe_allow_html=True
-    )
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("### 개념")
-        st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-        for item in work_designated_off_data["concept"]:
-            st.write(f"- {item}")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with col2:
-        st.markdown("### 부여 기준")
-        st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-        for item in work_designated_off_data["grant_rules"]:
-            st.write(f"- {item}")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("### 사용 기준")
-    st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-    for item in work_designated_off_data["usage_rules"]:
-        st.write(f"- {item}")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("### 근무형태 변경 시 지정휴무 발생 기준")
-    basis_tab1, basis_tab2, basis_tab3 = st.tabs(["21주기 기준", "현업일근 기준", "6주기 기준"])
-
-    with basis_tab1:
-        st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-        st.table({
-            "변경": [row[0] for row in work_designated_off_data["case_21"]],
-            "조건": [row[1] for row in work_designated_off_data["case_21"]],
-            "발생": [row[2] for row in work_designated_off_data["case_21"]]
-        })
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with basis_tab2:
-        st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-        st.table({
-            "변경": [row[0] for row in work_designated_off_data["case_field"]],
-            "조건": [row[1] for row in work_designated_off_data["case_field"]],
-            "발생": [row[2] for row in work_designated_off_data["case_field"]]
-        })
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with basis_tab3:
-        st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-        st.table({
-            "변경": [row[0] for row in work_designated_off_data["case_6"]],
-            "조건": [row[1] for row in work_designated_off_data["case_6"]],
-            "발생": [row[2] for row in work_designated_off_data["case_6"]]
-        })
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("### 지정휴무 자동 판단")
-    st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-
-    auto_mode = st.radio(
-        "입력 방식",
-        ["선택형 입력", "문장형 입력"],
-        horizontal=True,
-        key="designated_input_mode"
-    )
-
-    if auto_mode == "선택형 입력":
-        calc_case_type = st.selectbox(
-            "기준 유형을 선택하세요",
-            ["21주기 기준", "현업일근 기준", "6주기 기준", "분기연간 기준"],
-            key="designated_case_type"
-        )
-
-        if calc_case_type == "21주기 기준":
-            calc_prev_shift = st.selectbox(
-                "변경 유형을 선택하세요",
-                ["통상→21주기", "주간→야간", "야간→주간", "21주기주간→기타근무형태"],
-                key="designated_prev_shift_21"
+def render_quick_kpis(items: List[Dict[str, str]]):
+    cols = st.columns(len(items))
+    for col, item in zip(cols, items):
+        with col:
+            st.markdown(
+                f"<div class='kpi-card'>"
+                f"<div class='kpi-label'>{item['label']}</div>"
+                f"<div class='kpi-value'>{item['value']}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
             )
-            calc_next_shift = ""
-            calc_changed_work_type = ""
-            calc_remaining_days = None
-            calc_prior_weekday_days = None
 
-            if calc_prev_shift == "주간→야간":
-                calc_data = calculate_designated_off("21주기 기준", remaining_days=st.number_input("변경 후 잔여 근무일수", min_value=0, max_value=31, value=4, step=1, key="designated_remaining_21_day_to_night"), prev_shift="주간", next_shift="야간")
-            elif calc_prev_shift == "야간→주간":
-                calc_data = calculate_designated_off("21주기 기준", remaining_days=st.number_input("변경 후 잔여 근무일수", min_value=0, max_value=31, value=3, step=1, key="designated_remaining_21_night_to_day"), prev_shift="야간", next_shift="주간")
-            elif calc_prev_shift == "21주기주간→기타근무형태":
-                calc_changed_work_type = st.selectbox("변경 후 근무형태", ["교대근무", "교번근무", "통상근무"], key="designated_changed_work_type_21_other")
-                calc_prior_weekday_days = st.number_input("변경 전 주간 근무일수", min_value=0, max_value=7, value=4, step=1, key="designated_prior_weekday_days")
-                calc_data = calculate_designated_off("21주기 기준", prev_shift="21주기주간→기타", prior_weekday_days=calc_prior_weekday_days, changed_work_type=calc_changed_work_type)
-            else:
-                calc_data = calculate_designated_off("21주기 기준", remaining_days=0, prev_shift="통상→21주기")
 
-        elif calc_case_type == "현업일근 기준":
-            calc_prev_shift = st.selectbox(
-                "변경 유형을 선택하세요",
-                ["현업일근→21주기(주간)", "현업일근→21주기(야간)", "21주기→현업일근"],
-                key="designated_prev_shift_field"
-            )
-            if calc_prev_shift == "현업일근→21주기(주간)":
-                calc_prior_used_days = st.number_input("변경 전 지정휴무 사용일수", min_value=0, max_value=2, value=1, step=1, key="designated_prior_used_days_field_day")
-                calc_data = calculate_designated_off("현업일근 기준", remaining_days=0, prev_shift="현업일근→21주기", prior_used_days=calc_prior_used_days)
-            elif calc_prev_shift == "현업일근→21주기(야간)":
-                calc_remaining_days = st.number_input("변경 후 잔여 근무일수", min_value=0, max_value=31, value=4, step=1, key="designated_remaining_field_night")
-                calc_data = calculate_designated_off("현업일근 기준", remaining_days=calc_remaining_days, prev_shift="현업일근→21주기")
-            else:
-                calc_remaining_days = st.number_input("변경 후 잔여 근무일수", min_value=0, max_value=31, value=5, step=1, key="designated_remaining_field_to_day")
-                calc_data = calculate_designated_off("현업일근 기준", remaining_days=calc_remaining_days, prev_shift="21주기→현업일근")
+def render_bullets(title: str, items: List[str], variant: str = "normal"):
+    klass = "warn-box" if variant == "warn" else "block-card"
+    st.markdown(f"### {title}")
+    st.markdown(f"<div class='{klass}'>", unsafe_allow_html=True)
+    for item in items:
+        st.write(f"- {item}")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-        elif calc_case_type == "6주기 기준":
-            calc_remaining_days = st.number_input(
-                "근무지 배치일 또는 잔여일수",
-                min_value=0,
-                max_value=31,
-                value=6,
-                step=1,
-                key="designated_remaining_6"
-            )
-            calc_data = calculate_designated_off("6주기 기준", remaining_days=calc_remaining_days, prev_shift="통상/21주기→6주기")
 
-        else:
-            calc_changed = st.selectbox("변경 유형", ["21주기↔교번"], key="designated_quarterly_change")
-            calc_data = calculate_designated_off("분기연간 기준", changed_work_type=calc_changed)
+# =========================================================
+# 메뉴 구성
+# =========================================================
+MENU_CONFIG: Dict[str, List[str]] = {
+    "홈": [],
+    "근무제도": [
+        "근무일과 휴일",
+        "근무시간과 휴게시간",
+        "휴일대체근무제도",
+        "근무형태 변경시 처리",
+        "지정휴무",
+    ],
+    "휴가제도": [
+        "휴가 기본원칙",
+        "연차휴가",
+        "공가",
+        "병가",
+        "청원휴가",
+        "초과근무 보상휴가",
+        "특별휴가(자녀돌봄)",
+        "가족돌봄휴가",
+        "반일휴가 / 휴가정정",
+    ],
+    "출장제도": [],
+    "기타근태제도": [],
+    "휴직제도": [],
+}
 
-    else:
-        user_text = st.text_input(
-            "문장으로 입력하세요",
-            placeholder="예: 21주기 주간근무에서 교대근무로 바뀌고 변경 전 주간 근무일수는 4일이야",
-            key="designated_free_text"
-        )
-        parsed = parse_designated_off_text(user_text)
-        if parsed["case_type"]:
-            calc_data = calculate_designated_off(
-                parsed["case_type"],
-                remaining_days=parsed["remaining_days"],
-                prev_shift=parsed["prev_shift"],
-                next_shift=parsed["next_shift"],
-                prior_used_days=parsed["prior_used_days"],
-                prior_weekday_days=parsed["prior_weekday_days"],
-                changed_work_type=parsed["changed_work_type"],
-            )
-            st.caption(
-                f"해석된 입력값: {parsed['case_type']} / {parsed['prev_shift']}"
-                + (f" → {parsed['next_shift']}" if parsed["next_shift"] else "")
-                + (f" / 변경 후 근무형태 {parsed['changed_work_type']}" if parsed["changed_work_type"] else "")
-                + (f" / 잔여 근무일수 {parsed['remaining_days']}일" if parsed["remaining_days"] is not None else "")
-                + (f" / 변경 전 주간 근무일수 {parsed['prior_weekday_days']}일" if parsed["prior_weekday_days"] is not None else "")
-            )
-        else:
-            calc_data = {
-                "result": "계산 대기",
-                "reason": "문장에서 변경 유형 또는 기준 정보를 찾지 못했습니다.",
-                "rule": "예시처럼 ‘21주기 주간근무에서 교대근무’, ‘주간 근무일수 4일’처럼 입력해 주세요."
+DISPLAY_TO_INTERNAL = {
+    "휴가 기본원칙": "일반사항",
+    "초과근무 보상휴가": "보상휴가",
+    "반일휴가 / 휴가정정": "반일휴가제",
+}
+
+
+# =========================================================
+# 데이터 - 현재 구현본
+# 필요 시 아래 계속 추가
+# =========================================================
+leave_general_data = {
+    "title": "휴가 기본원칙",
+    "one_line_summary": "휴가는 출근 의무가 있는 날에 사용하는 제도이며, 승인·증빙·연락체계 유지가 실무 핵심입니다.",
+    "legal_meaning": [
+        "휴가는 출근을 전제로 하며, 출근의무가 없는 휴직·정직 중인 직원은 휴가를 사용할 수 없습니다.",
+        "휴가는 근로자가 청구하거나 특별한 사유가 충족되어 근로제공 의무가 면제된 날입니다.",
+        "휴가신청에 대한 허가는 업무형편과 부서 사정을 고려해 시기를 변경할 수 있으나 특별한 사정이 없는 한 허가합니다."
+    ],
+    "principles": [
+        "휴가를 사용하려면 소속장 승인을 받아야 하며 필요한 경우 증빙서류를 제출해야 합니다.",
+        "특별한 사정으로 본인이 휴가신고서를 제출하지 못하면 소속직원이 대리 제출할 수 있습니다.",
+        "증빙서류를 바로 제출하지 못한 경우에는 휴가 종료 후 3일 이내 제출해야 합니다.",
+        "소속장은 업무 공백이 생기지 않도록 조치하면서 직원이 원하는 시기에 휴가를 보장하도록 노력해야 합니다."
+    ],
+    "cautions": [
+        "휴가기간 중 비상시 연락 가능하도록 연락체계를 유지해야 합니다.",
+        "국외여행이 포함된 경우 휴가원 입력 시 국외여행 체크와 연락망 기재가 필요합니다.",
+        "정해진 기간을 초과해 사용하면 결근처리 및 감사대상이 될 수 있습니다.",
+        "같은 날 두 종류 이상의 휴가사유가 겹치면 하나의 휴가만 허가됩니다.",
+        "전보발령 이후의 휴가는 새로운 소속장 승인 후 사용해야 합니다."
+    ],
+    "leave_types": [
+        ["연차휴가", "계속 근로한 직원의 근로의욕 고취", "연간 15일~25일", "회계연도 단위로 발생"],
+        ["공가", "병역검사, 예비군 훈련 등 공적 사유 처리", "필요한 시간만큼 부여", ""],
+        ["병가", "부상 또는 질병의 치료", "공상병가 180일 / 사상병가 60일", ""],
+        ["청원휴가", "본인 또는 가족의 경조사 참석", "사유별 상이", "본인에는 배우자 포함"],
+        ["모성보호휴가", "임신, 출산, 수유 지원", "보건휴가·출산전후휴가 등", "제12장 참고"],
+        ["장기근속휴가", "장기근속자 건강증진 및 사기진작", "재직기간 내 5일", "2005.1.10 이전 입사자"],
+        ["장기재직휴가", "장기간 재직한 직원의 노고 치하", "5/10/20/20일", ""],
+        ["보상휴가", "통상근무자의 연장근로에 대한 보상", "연간 6일 이내", ""],
+        ["특별휴가(자녀돌봄)", "미성년자녀 학교행사·상담·진료 동행", "연 2일(자녀 셋 이상 3일)", "최소 4시간부터"],
+        ["가족돌봄휴가", "가족의 질병·사고·노령·자녀양육 돌봄", "연 10일(무급)", ""]
+    ]
+}
+
+annual_leave_data = {
+    "title": "연차휴가",
+    "summary": "연차휴가는 전년도 출근율과 계속 근로연수에 따라 발생하며, 일부 대상자는 촉진일수를 별도로 계산하여 사용촉진 절차를 적용합니다.",
+    "overview": [
+        "1년 미만 연차는 입사일 기준 1개월 개근 시 1일씩 발생하며 총 11일까지 가능합니다.",
+        "전년도 출근율에 따른 연차는 회계연도 기준으로 산정합니다.",
+        "출근율 80% 이상이면 기본 15일에 최초 1년 초과 계속 근로연수 매 2년마다 1일 가산하며 총 25일 이내입니다.",
+        "출근율 80% 미만이면 1개월 개근 시 1일이 발생합니다.",
+        "통상근무자와 21주기 교대근무자의 주간근무는 반일휴가 사용이 가능합니다."
+    ],
+    "promotion": [
+        "대상자는 전 직원입니다.",
+        "촉진일수는 연간 5일이며, 발생일수가 5일 미만이면 그 발생일수만큼 촉진합니다.",
+        "휴직 사용자, 장기 교육 파견자, 출산전후휴가 사용자는 근무일 일할 계산 후 소수점 이하는 절사합니다.",
+        "수당지급 시점에는 실근무일 기준으로 촉진일을 확정합니다."
+    ],
+    "promotion_steps_general": [
+        "휴가사용 기간 종료 6개월 전 기준으로 10일 이내 사용하지 않은 휴가일수를 알리고 사용시기 통보를 촉구합니다.",
+        "근로자가 10일 이내 사용시기를 통보하지 않으면 기간 종료 2개월 전까지 사용시기를 정해 통보합니다.",
+        "기간 내 사용하지 않은 휴가는 소멸하며 수당청구권이 발생하지 않습니다."
+    ],
+    "promotion_steps_new_employee": [
+        "1년 미만 연차는 사용기간 종료 3개월 전 기준으로 10일 이내 사용하지 않은 휴가일수를 알리고 사용시기 통보를 촉구합니다.",
+        "촉구 이후 발생한 휴가에 대해서도 별도 촉구 절차를 진행합니다.",
+        "기간 내 사용하지 않은 휴가는 소멸하며 수당청구권이 발생하지 않습니다."
+    ],
+    "new_employee_table": [
+        ["1월 입사", 11, 0, 11, 5, "15 ~ 13.7", 5],
+        ["2월 입사", 10, 1, 11, 5, "13.7 ~ 12.6", 4],
+        ["3월 입사", 9, 2, 11, 5, "12.6 ~ 11.3", 4],
+        ["4월 입사", 8, 3, 11, 5, "11.3 ~ 9.7", 3],
+        ["5월 입사", 7, 4, 11, 5, "9.7 ~ 8.4", 3],
+        ["6월 입사", 6, 5, 11, 5, "8.4 ~ 7.2", 3],
+        ["7월 입사", 5, 6, 11, 5, "7.2 ~ 5.9", 2],
+        ["8월 입사", 4, 7, 11, 5, "5.9 ~ 4.6", 2],
+        ["9월 입사", 3, 8, 11, 5, "4.6 ~ 3.4", 1],
+        ["10월 입사", 2, 9, 11, 5, "3.4 ~ 2.1", 1],
+        ["11월 입사", 1, 10, 11, 5, "2.1 ~ 0.9", 0],
+        ["12월 입사", 0, 11, 11, 5, "0.9 ~ 0", 0]
+    ]
+}
+
+sick_leave_data = {
+    "title": "병가",
+    "summary": "병가는 부상 또는 질병 치료를 위해 사용하는 휴가이며, 공상병가와 사상병가를 구분하여 관리합니다.",
+    "concept": [
+        "병가는 직원이 부상 또는 질병으로 일정기간 치료가 필요할 때 사용하는 휴가입니다."
+    ],
+    "grant_rules": [
+        "공상병가: 산업재해 요양승인에 따른 병가로 연 누계 180일 범위입니다.",
+        "사상병가: 공상병가 이외의 병가로 연 누계 60일 범위입니다."
+    ],
+    "usage_rules": [
+        "병가를 사용할 때에는 원칙적으로 의사의 진단서를 제출해야 합니다.",
+        "3일 이내 병가는 진료확인서 또는 진료비영수증 등 병원 방문 확인 자료로 갈음할 수 있습니다.",
+        "3일을 초과하면 진단서 기준을 함께 확인해야 합니다."
+    ],
+    "etc_rules": [
+        "공상병가와 사상병가는 각각 구분해 관리합니다.",
+        "병가기간을 초과하면 개인 휴가 또는 휴직 검토가 필요할 수 있습니다."
+    ]
+}
+
+petition_leave_data = {
+    "title": "청원휴가",
+    "summary": "청원휴가는 본인 또는 가족의 경조사 참석 등을 위해 사용하는 휴가입니다.",
+    "grant_rules": [
+        "결혼-본인: 5일",
+        "결혼-자녀: 1일",
+        "출산-배우자: 20일",
+        "입양-본인: 20일",
+        "사망-배우자, 본인 및 배우자의 부모: 5일",
+        "사망-본인 및 배우자의 조부모·외조부모: 3일",
+        "사망-자녀와 그 자녀의 배우자: 3일",
+        "사망-본인 및 배우자의 형제자매와 그 배우자: 1일",
+        "사망-본인 및 배우자 부모의 형제자매와 그 배우자: 1일",
+        "탈상-배우자, 본인 및 배우자의 부모: 1일",
+    ],
+}
+
+comp_leave_data = {
+    "title": "초과근무 보상휴가",
+    "summary": "보상휴가는 통상근무자가 연장·야간·휴일근로를 한 경우 임금 대신 휴가를 적치하여 사용하는 제도입니다.",
+    "grant_rules": [
+        "대상자: 통상근무자",
+        "사용일수: 연간 6일",
+        "연도 중 입사·퇴사·근무형태 변경·휴복직 시 일할계산하며 1일 단위 반올림합니다."
+    ],
+    "usage_rules": [
+        "적치기간: 전년도 12.1. ~ 당해연도 11.30.",
+        "사용기간: 당해연도 상반기 3일, 하반기 3일",
+        "기간 내 미사용 시 소멸하며 금전보상은 불가합니다."
+    ]
+}
+
+special_childcare_leave_data = {
+    "title": "특별휴가(자녀돌봄)",
+    "summary": "미성년 자녀의 공식 학교행사, 교사 상담, 병원 진료 동행 등을 위해 사용하는 휴가입니다.",
+    "usage_rules": [
+        "자녀 수 1~2명은 연간 2일(16시간)입니다.",
+        "자녀 수 3명 이상이거나 특수 자녀 조건이 있으면 연간 3일(24시간)입니다.",
+        "최소 4시간부터 1시간 단위로 사용할 수 있습니다."
+    ]
+}
+
+family_care_leave_data = {
+    "title": "가족돌봄휴가",
+    "summary": "가족의 질병, 사고, 노령 또는 자녀 양육으로 긴급 돌봄이 필요할 때 사용하는 무급휴가입니다.",
+    "operation_rules": [
+        "휴가일수는 연간 10일 이내이며 일 단위로 사용합니다.",
+        "가족돌봄휴가는 무급휴가이며 자녀돌봄휴가와는 구분해 사용합니다.",
+        "신청 시 가족관계 및 신청사유를 증빙할 수 있는 서류를 첨부해야 합니다."
+    ]
+}
+
+half_day_leave_data = {
+    "title": "반일휴가 / 휴가정정",
+    "summary": "반일휴가는 일부 휴가를 오전 또는 오후로 사용하는 제도이며, 휴가정정은 출력물 저장 → 삭제 → 재등록 순으로 처리합니다.",
+    "usage_rules": [
+        "반일 단위 사용이 가능한 휴가는 통상근무자의 연차휴가·보상휴가, 21주기 주간근무 시 연차휴가입니다.",
+        "반일휴가 1회는 0.5일, 2회는 1일로 봅니다.",
+        "근무시간의 중간대에는 사용할 수 없습니다."
+    ],
+    "correction_rules": [
+        "정정 전 휴가 출력물 저장",
+        "휴가 삭제",
+        "휴가 재등록",
+    ]
+}
+
+# =========================================================
+# 검색 인덱스
+# =========================================================
+def build_search_index() -> List[Dict[str, str]]:
+    index: List[Dict[str, str]] = []
+
+    def add(main: str, sub: str, keywords: List[str], desc: str):
+        index.append(
+            {
+                "main": main,
+                "sub": sub,
+                "display_sub": next((k for k, v in DISPLAY_TO_INTERNAL.items() if v == sub), sub),
+                "keywords": " ".join(keywords).lower(),
+                "desc": desc,
             }
+        )
 
-    st.success(f"자동 판단 결과: {calc_data['result']}")
-    st.write(f"**판단 이유**: {calc_data['reason']}")
-    st.write(f"**적용 근거**: {calc_data['rule']}")
-    st.caption("이 계산기는 지정휴무 문서 표 기준으로 자동 판단합니다. 최종 적용 전 실제 근무표와 인사이동 기준을 함께 확인하세요.")
-    st.markdown("</div>", unsafe_allow_html=True)
+    add("휴가제도", "일반사항", ["휴가 기본원칙", "휴가 승인", "증빙", "국외여행", "중복휴가"], "휴가의 공통 원칙과 유의사항 확인")
+    add("휴가제도", "연차휴가", ["연차", "연차촉진", "신입사원 연차", "배우자 출산휴가 며칠"], "연차 발생과 사용촉진 확인")
+    add("휴가제도", "병가", ["병가", "병가 3일 넘으면 뭐 필요해", "진단서", "공상병가", "사상병가"], "병가 기준과 필요서류 확인")
+    add("휴가제도", "청원휴가", ["청원휴가", "배우자 출산휴가 며칠", "경조사", "부고", "탈상"], "경조사 휴가 일수 확인")
+    add("휴가제도", "보상휴가", ["보상휴가", "초과근무", "연장근무 2시간", "적치"], "보상휴가 적치 계산 확인")
+    add("휴가제도", "특별휴가(자녀돌봄)", ["자녀돌봄", "학교 행사", "교사 상담", "병원 진료 동행"], "자녀돌봄 특별휴가 기준 확인")
+    add("휴가제도", "가족돌봄휴가", ["가족돌봄", "무급", "10일", "노령", "긴급 돌봄"], "가족돌봄휴가 기준 확인")
+    add("휴가제도", "반일휴가제", ["반일휴가", "휴가정정", "오전 반차", "오후 반차", "drims 정정"], "반일휴가와 휴가정정 절차 확인")
+    return index
 
-    st.markdown("### 실무 포인트")
-    st.markdown("<div class='warn-box'>", unsafe_allow_html=True)
-    for item in work_designated_off_data["note"]:
-        st.write(f"- {item}")
-    st.markdown("</div>", unsafe_allow_html=True)
+SEARCH_INDEX = build_search_index()
 
-    st.markdown("### 빠른 판단 순서")
-    st.markdown("<div class='block-card'>", unsafe_allow_html=True)
-    st.write("1. 변경 전·후 근무형태를 먼저 확인합니다.")
-    st.write("2. 잔여 근무일수를 확인합니다.")
-    st.write("3. 21주기 / 현업일근 / 6주기 중 해당 표를 선택합니다.")
-    st.write("4. 발생 여부를 확인한 뒤 실제 근무표와 인사이동 기준을 함께 검토합니다.")
-    st.markdown("</div>", unsafe_allow_html=True)
+# =========================================================
+# 계산 함수
+# =========================================================
+def calculate_promotion_days_for_special_case(work_days: int) -> int:
+    if work_days < 0:
+        return 0
+    return int((5 * work_days) // 365)
 
-    
 
+def get_promotion_guide(promotion_days: int, employee_type: str) -> List[str]:
+    if employee_type == "신입사원(1년 미만/2년차)":
+        return annual_leave_data["promotion_steps_new_employee"]
+    if promotion_days <= 0:
+        return ["계산 결과 촉진일수가 0일이므로 별도 촉진일 적용 대상이 아닙니다. 최종 적용 전 인사자료와 실근무일을 다시 확인해 주세요."]
+    return annual_leave_data["promotion_steps_general"]
+
+
+def calculate_sick_leave_days(leave_type: str, input_days: int, already_used_days: int) -> dict:
+    limit_days = 180 if leave_type == "공상병가" else 60
+    remaining_days = max(limit_days - already_used_days - input_days, 0)
+    total_used = already_used_days + input_days
+    if total_used > limit_days:
+        msg = f"{leave_type} 한도를 초과합니다. 추가 기간은 개인 휴가 또는 휴직 검토가 필요할 수 있습니다."
+    else:
+        msg = f"현재 입력 기준 산입 병가일수는 {input_days}일이며 잔여 가능일수는 {remaining_days}일입니다."
+    return {
+        "limit_days": limit_days,
+        "remaining_days": remaining_days,
+        "message": msg,
+    }
+
+
+PETITION_LEAVE_MAP = {
+    ("결혼", "본인"): 5,
+    ("결혼", "자녀"): 1,
+    ("출산", "배우자"): 20,
+    ("입양", "본인"): 20,
+    ("사망", "배우자"): 5,
+    ("사망", "본인/배우자의 부모"): 5,
+    ("사망", "본인/배우자의 조부모·외조부모"): 3,
+    ("사망", "자녀/자녀의 배우자"): 3,
+    ("사망", "본인/배우자의 형제자매 및 그 배우자"): 1,
+    ("사망", "본인/배우자 부모의 형제자매 및 그 배우자"): 1,
+    ("탈상", "배우자/본인/배우자의 부모"): 1,
+}
+
+
+def calculate_petition_leave(event_type: str, relation: str, is_holiday: bool):
+    days = PETITION_LEAVE_MAP.get((event_type, relation), 0)
+    start_note = "사유 발생일부터 기산합니다." if not is_holiday else "사유 발생일이 휴일이면 다음 근무일부터 기산합니다."
+    return {"days": days, "note": start_note}
+
+
+def calculate_comp_leave_hours(overtime_hours: float) -> dict:
+    accumulated_hours = overtime_hours * 1.5
+    accumulated_days = accumulated_hours / 8.0
+    return {
+        "accumulated_hours": round(accumulated_hours, 2),
+        "accumulated_days": round(accumulated_days, 2),
+    }
+
+
+def calculate_childcare_leave_entitlement(child_count: int, special_child: bool) -> dict:
+    if child_count >= 3 or special_child:
+        return {"days": 3, "hours": 24}
+    return {"days": 2, "hours": 16}
+
+
+def get_family_care_leave_entitlement(used_days: int) -> dict:
+    max_days = 10
+    remaining_days = max(max_days - used_days, 0)
+    return {"max_days": max_days, "used_days": used_days, "remaining_days": remaining_days}
+
+
+HALF_DAY_TABLE = {
+    ("통상근무", "기본", "오전"): {"leave_time": "09:00 ~ 13:30", "work_time": "13:30 ~ 18:00"},
+    ("통상근무", "기본", "오후"): {"leave_time": "13:30 ~ 18:00", "work_time": "09:00 ~ 13:30"},
+    ("자녀양육지원제", "9to5", "오전"): {"leave_time": "09:00 ~ 13:00", "work_time": "13:00 ~ 17:00"},
+    ("자녀양육지원제", "9to5", "오후"): {"leave_time": "13:00 ~ 17:00", "work_time": "09:00 ~ 13:00"},
+    ("자녀양육지원제", "10to6", "오전"): {"leave_time": "10:00 ~ 14:00", "work_time": "14:00 ~ 18:00"},
+    ("자녀양육지원제", "10to6", "오후"): {"leave_time": "14:00 ~ 18:00", "work_time": "10:00 ~ 14:00"},
+}
+
+
+def get_half_day_leave_time(worker_type: str, schedule_type: str, leave_part: str) -> dict:
+    return HALF_DAY_TABLE.get((worker_type, schedule_type, leave_part), {"leave_time": "-", "work_time": "-"})
+
+
+# =========================================================
+# 상단 검색
+# =========================================================
+def render_global_search() -> None:
+    query = st.text_input(
+        "빠른 검색",
+        placeholder="예: 병가 3일 넘으면 뭐 필요해? / 배우자 출산휴가 며칠? / 휴가정정",
+    ).strip().lower()
+
+    if not query:
+        return
+
+    scored = []
+    for item in SEARCH_INDEX:
+        score = 0
+        for token in query.split():
+            if token in item["keywords"]:
+                score += 1
+        if score > 0:
+            scored.append({**item, "score": score})
+
+    scored.sort(key=lambda x: x["score"], reverse=True)
+
+    st.markdown("### 검색 결과")
+    if not scored:
+        st.markdown("<div class='warn-box'><b>검색 결과 없음</b><br>휴가명, 키워드, 처리명 중심으로 다시 검색해 주세요.</div>", unsafe_allow_html=True)
+        return
+
+    for item in scored[:5]:
+        st.markdown("<div class='block-card'>", unsafe_allow_html=True)
+        st.markdown(f"**{item['main']} > {item['display_sub']}**")
+        st.write(item["desc"])
+        if st.button(f"바로 열기 · {item['display_sub']}", key=f"search_{item['main']}_{item['sub']}"):
+            st.session_state["main_menu"] = item["main"]
+            st.session_state["sub_menu"] = item["sub"]
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+# =========================================================
+# 홈 화면
+# =========================================================
+def render_home_dashboard():
+    render_page_header(
+        "복무관리 매뉴얼",
+        "홈",
+        "현장 서무가 자주 찾는 항목과 자동 판단 도구를 바로 열 수 있도록 구성했습니다.",
+    )
+    render_quick_kpis([
+        {"label": "가장 많이 찾는 메뉴", "value": "연차 / 병가 / 청원휴가"},
+        {"label": "실무 처리 순서", "value": "판단 → 처리경로 → 유의사항"},
+        {"label": "기본 원칙", "value": "신청·승인 후 사용"},
+    ])
+
+    st.markdown("### 자주 찾는 항목")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        if st.button("연차휴가", use_container_width=True):
+            st.session_state["main_menu"] = "휴가제도"
+            st.session_state["sub_menu"] = "연차휴가"
+            st.rerun()
+        if st.button("병가", use_container_width=True):
+            st.session_state["main_menu"] = "휴가제도"
+            st.session_state["sub_menu"] = "병가"
+            st.rerun()
+    with c2:
+        if st.button("청원휴가", use_container_width=True):
+            st.session_state["main_menu"] = "휴가제도"
+            st.session_state["sub_menu"] = "청원휴가"
+            st.rerun()
+        if st.button("공가", use_container_width=True):
+            st.session_state["main_menu"] = "휴가제도"
+            st.session_state["sub_menu"] = "공가"
+            st.rerun()
+    with c3:
+        if st.button("반일휴가 / 정정", use_container_width=True):
+            st.session_state["main_menu"] = "휴가제도"
+            st.session_state["sub_menu"] = "반일휴가제"
+            st.rerun()
+        if st.button("가족돌봄휴가", use_container_width=True):
+            st.session_state["main_menu"] = "휴가제도"
+            st.session_state["sub_menu"] = "가족돌봄휴가"
+            st.rerun()
+
+    render_drims_box(
+        "휴가정정: 셀프서비스 > 근태관리 > 휴가출장관리 > 휴가신청",
+        "근태일이 지난 휴가 수정 시 출력물 저장 → 삭제 → 재등록 순서를 권장합니다.",
+    )
+
+
+# =========================================================
+# 페이지 함수
+# =========================================================
+def render_leave_general_page():
+    render_page_header("휴가 기본원칙", "휴가제도 > 휴가 기본원칙", leave_general_data["one_line_summary"])
+    render_quick_kpis([
+        {"label": "사용 가능 기준", "value": "출근의무 있는 날"},
+        {"label": "기본 절차", "value": "신청 → 승인 → 사용"},
+        {"label": "먼저 확인", "value": "증빙 / 연락체계 / 중복 여부"},
+    ])
+    render_drims_box("휴가 신청 후 승인 절차 진행", "휴가 종료 후 증빙 보완이 필요한 경우 기한 내 제출해야 합니다.")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        render_bullets("휴가의 법적 의미", leave_general_data["legal_meaning"])
+    with c2:
+        render_bullets("휴가실시의 원칙", leave_general_data["principles"])
+    render_bullets("적용 시 유의사항", leave_general_data["cautions"], variant="warn")
+
+    st.markdown("### 휴가 종류 한눈에 보기")
+    st.table({
+        "구분": [x[0] for x in leave_general_data["leave_types"]],
+        "사용목적": [x[1] for x in leave_general_data["leave_types"]],
+        "일수": [x[2] for x in leave_general_data["leave_types"]],
+        "비고": [x[3] for x in leave_general_data["leave_types"]],
+    })
+
+
+def render_annual_leave_page():
+    render_page_header("연차휴가", "휴가제도 > 연차휴가", annual_leave_data["summary"])
+    render_quick_kpis([
+        {"label": "기본 기준", "value": "출근율 + 계속근로연수"},
+        {"label": "촉진일수", "value": "연간 최대 5일"},
+        {"label": "특이 대상", "value": "신입사원 / 휴직자"},
+    ])
+    render_bullets("연차휴가 개요", annual_leave_data["overview"])
+    render_bullets("연차휴가 사용촉진 개요", annual_leave_data["promotion"])
+
+    st.markdown("### 자동 판단")
+    mode = st.radio(
+        "계산 유형",
+        ["일반 직원", "휴직·파견·출산전후휴가 사용자", "신입사원(1년 미만/2년차)"],
+        horizontal=True,
+    )
+
+    if mode == "일반 직원":
+        annual_occured_days = st.number_input("해당 연도 발생 연차일수", min_value=0.0, max_value=30.0, value=15.0, step=1.0)
+        promotion_days = int(min(5, annual_occured_days))
+        render_result_panel(
+            result=f"촉진일수 {promotion_days}일",
+            basis="발생 연차일수와 연간 최대 5일 기준 적용",
+            next_step="사용촉진 안내 절차를 진행하고 미사용분 여부를 확인합니다.",
+            caution="최종 적용 전 인사자료와 실제 발생 연차일수를 함께 확인해 주세요.",
+        )
+        guide = get_promotion_guide(promotion_days, "일반직원")
+
+    elif mode == "휴직·파견·출산전후휴가 사용자":
+        work_days = st.number_input("실근무일수", min_value=0, max_value=365, value=273, step=1)
+        promotion_days = calculate_promotion_days_for_special_case(work_days)
+        render_result_panel(
+            result=f"촉진일수 {promotion_days}일",
+            basis="5일 × 근무일수 / 365 후 소수점 이하는 절사",
+            next_step="계산 결과에 따라 사용촉진 절차를 적용합니다.",
+            caution="수당지급 시점에는 실근무일 기준으로 다시 확정될 수 있습니다.",
+        )
+        guide = get_promotion_guide(promotion_days, "일반직원")
+
+    else:
+        join_month = st.selectbox("입사월", [f"{i}월" for i in range(1, 13)], index=0)
+        row = annual_leave_data["new_employee_table"][int(join_month.replace("월", "")) - 1]
+        render_result_panel(
+            result=f"1년 미만 촉진일수 {row[4]}일 / 2년차 촉진일수 {row[6]}일",
+            basis=f"입사월 {row[0]} 기준표 적용",
+            next_step="신입사원용 사용촉진 절차를 적용합니다.",
+            caution="입사월과 실제 발생 연차범위를 함께 확인해 주세요.",
+        )
+        guide = get_promotion_guide(row[4], "신입사원(1년 미만/2년차)")
+
+    render_bullets("후속 처리", guide, variant="warn")
+
+
+def render_sick_leave_page():
+    render_page_header("병가", "휴가제도 > 병가", sick_leave_data["summary"])
+    render_quick_kpis([
+        {"label": "구분", "value": "공상병가 / 사상병가"},
+        {"label": "한도", "value": "180일 / 60일"},
+        {"label": "핵심 증빙", "value": "진단서 또는 방문증빙"},
+    ])
+    c1, c2 = st.columns(2)
+    with c1:
+        render_bullets("개념", sick_leave_data["concept"])
+        render_bullets("부여기준", sick_leave_data["grant_rules"])
+    with c2:
+        render_bullets("사용방법", sick_leave_data["usage_rules"])
+        render_bullets("적용 시 유의사항", sick_leave_data["etc_rules"], variant="warn")
+
+    st.markdown("### 자동 판단")
+    leave_type = st.selectbox("병가 종류", ["공상병가", "사상병가"])
+    input_days = st.number_input("이번에 사용할 병가일수", min_value=0, max_value=365, value=3, step=1)
+    already_used_days = st.number_input("해당 연도 기존 사용 병가일수", min_value=0, max_value=365, value=0, step=1)
+    result = calculate_sick_leave_days(leave_type, input_days, already_used_days)
+    render_result_panel(
+        result=f"잔여 가능일수 {result['remaining_days']}일",
+        basis=f"{leave_type} 한도 {result['limit_days']}일 기준 적용",
+        next_step="증빙서류와 동일 질병 여부를 함께 확인합니다.",
+        caution=result["message"],
+    )
+
+
+def render_petition_leave_page():
+    render_page_header("청원휴가", "휴가제도 > 청원휴가", petition_leave_data["summary"])
+    render_quick_kpis([
+        {"label": "대상", "value": "본인 / 가족 경조사"},
+        {"label": "핵심 기준", "value": "사유별 일수 상이"},
+        {"label": "먼저 확인", "value": "관계 / 사유 발생일"},
+    ])
+    render_bullets("주요 부여기준", petition_leave_data["grant_rules"])
+
+    st.markdown("### 자동 판단")
+    event_type = st.selectbox("사유 구분", ["결혼", "출산", "입양", "사망", "탈상"])
+    relation_options = {
+        "결혼": ["본인", "자녀"],
+        "출산": ["배우자"],
+        "입양": ["본인"],
+        "사망": [
+            "배우자",
+            "본인/배우자의 부모",
+            "본인/배우자의 조부모·외조부모",
+            "자녀/자녀의 배우자",
+            "본인/배우자의 형제자매 및 그 배우자",
+            "본인/배우자 부모의 형제자매 및 그 배우자",
+        ],
+        "탈상": ["배우자/본인/배우자의 부모"],
+    }
+    relation = st.selectbox("대상 관계", relation_options[event_type])
+    is_holiday = st.checkbox("사유 발생일이 휴일 또는 공휴일임", value=False)
+    result = calculate_petition_leave(event_type, relation, is_holiday)
+    render_result_panel(
+        result=f"부여 일수 {result['days']}일",
+        basis=f"{event_type} / {relation} 기준 적용",
+        next_step="증빙자료와 사유 발생일 기준으로 휴가를 신청합니다.",
+        caution=result["note"],
+    )
+
+
+def render_comp_leave_page():
+    render_page_header("초과근무 보상휴가", "휴가제도 > 초과근무 보상휴가", comp_leave_data["summary"])
+    render_quick_kpis([
+        {"label": "대상", "value": "통상근무자"},
+        {"label": "연간 한도", "value": "6일"},
+        {"label": "산출 기준", "value": "초과근로 × 1.5"},
+    ])
+    c1, c2 = st.columns(2)
+    with c1:
+        render_bullets("부여기준", comp_leave_data["grant_rules"])
+    with c2:
+        render_bullets("사용방법", comp_leave_data["usage_rules"])
+
+    st.markdown("### 자동 판단")
+    overtime_hours = st.number_input("연장·야간·휴일근로 시간(시간)", min_value=0.0, max_value=500.0, value=2.0, step=0.5)
+    result = calculate_comp_leave_hours(overtime_hours)
+    render_result_panel(
+        result=f"적치시간 {result['accumulated_hours']}시간 / 적치일수 {result['accumulated_days']}일",
+        basis="초과근로시간 + 50% 가산시간 적치",
+        next_step="상·하반기 사용 가능일수와 실제 적치 누계를 같이 확인합니다.",
+        caution="기간 내 미사용 시 소멸하며 금전보상은 불가합니다.",
+    )
+
+
+def render_special_childcare_leave_page():
+    render_page_header("특별휴가(자녀돌봄)", "휴가제도 > 특별휴가(자녀돌봄)", special_childcare_leave_data["summary"])
+    render_quick_kpis([
+        {"label": "자녀 1~2명", "value": "연 2일(16시간)"},
+        {"label": "자녀 3명 이상", "value": "연 3일(24시간)"},
+        {"label": "사용 단위", "value": "최소 4시간"},
+    ])
+    render_bullets("사용기준", special_childcare_leave_data["usage_rules"])
+
+    st.markdown("### 자동 판단")
+    child_count = st.number_input("가족으로 등록된 만 19세 미만 자녀 수", min_value=1, max_value=10, value=1, step=1)
+    special_child = st.checkbox("중증장애인 또는 희귀난치성질환 자녀가 있음", value=False)
+    entitlement = calculate_childcare_leave_entitlement(child_count, special_child)
+    render_result_panel(
+        result=f"연간 {entitlement['days']}일 / {entitlement['hours']}시간 사용 가능",
+        basis="자녀 수 및 특수 자녀 조건 기준 적용",
+        next_step="학교행사, 상담, 병원 진료 동행 등 사유와 증빙을 확인합니다.",
+        caution="학교 밖 체험활동이나 학원 관련 일정은 대상이 아닐 수 있습니다.",
+    )
+
+
+def render_family_care_leave_page():
+    render_page_header("가족돌봄휴가", "휴가제도 > 가족돌봄휴가", family_care_leave_data["summary"])
+    render_quick_kpis([
+        {"label": "연간 한도", "value": "10일"},
+        {"label": "급여", "value": "무급"},
+        {"label": "먼저 확인", "value": "가족관계 / 증빙"},
+    ])
+    render_bullets("운영방법 및 사용기준", family_care_leave_data["operation_rules"])
+    used_days = st.number_input("해당 연도 이미 사용한 가족돌봄휴가 일수", min_value=0, max_value=10, value=0, step=1)
+    entitlement = get_family_care_leave_entitlement(used_days)
+    render_result_panel(
+        result=f"잔여 사용 가능일수 {entitlement['remaining_days']}일",
+        basis="연간 10일 기준 적용",
+        next_step="가족관계 및 신청사유 증빙자료를 첨부해 신청합니다.",
+        caution="가족돌봄휴가는 무급휴가이며 자녀돌봄휴가와 구분해 사용해야 합니다.",
+    )
+
+
+def render_half_day_leave_page():
+    render_page_header("반일휴가 / 휴가정정", "휴가제도 > 반일휴가 / 휴가정정", half_day_leave_data["summary"])
+    render_quick_kpis([
+        {"label": "반일 기준", "value": "1회 0.5일"},
+        {"label": "사용 구분", "value": "오전 / 오후"},
+        {"label": "정정 절차", "value": "저장 → 삭제 → 재등록"},
+    ])
+    tab1, tab2 = st.tabs(["반일휴가 안내", "휴가정정 방법"])
+    with tab1:
+        render_bullets("사용기준", half_day_leave_data["usage_rules"])
+        worker_type = st.selectbox("대상자 구분", ["통상근무", "자녀양육지원제"])
+        schedule_type = "기본" if worker_type == "통상근무" else st.selectbox("근무유형", ["9to5", "10to6"])
+        leave_part = st.selectbox("반일 구분", ["오전", "오후"])
+        result = get_half_day_leave_time(worker_type, schedule_type, leave_part)
+        render_result_panel(
+            result=f"휴가시간 {result['leave_time']} / 근무시간 {result['work_time']}",
+            basis=f"{worker_type} / {schedule_type} / {leave_part} 기준 적용",
+            next_step="근무표와 휴게시간 조정 여부를 확인한 뒤 신청합니다.",
+            caution="근무시간의 중간대에는 사용할 수 없습니다.",
+        )
+    with tab2:
+        render_drims_box(
+            "셀프서비스 > 근태관리 > 휴가출장관리 > 휴가신청",
+            "근태일이 경과한 휴가 수정 시 출력물 저장 → 삭제 → 재등록 순으로 처리합니다.",
+        )
+        render_bullets("휴가정정 순서", half_day_leave_data["correction_rules"], variant="warn")
+
+
+# =========================================================
+# 추후 연결용 자리 페이지
+# =========================================================
+def render_placeholder_page(main: str, sub: Optional[str]):
+    breadcrumb = main if not sub else f"{main} > {sub}"
+    render_page_header("준비 중", breadcrumb, "해당 메뉴는 다음 단계에서 연결 예정입니다.")
+    st.info("현재는 핵심 실무 메뉴를 우선 정리하고 있습니다.")
+
+
+# =========================================================
+# 사이드바
+# =========================================================
+def render_sidebar() -> tuple[str, Optional[str]]:
+    with st.sidebar:
+        st.title("📘 복무관리")
+        st.caption("현장용 조회 · 판단 도구")
+
+        main_keys = list(MENU_CONFIG.keys())
+        default_main = st.session_state.get("main_menu", "홈")
+        main_index = main_keys.index(default_main) if default_main in main_keys else 0
+        main_menu = st.radio("메뉴 선택", main_keys, index=main_index)
+
+        if main_menu == "홈":
+            sub_menu = None
+        else:
+            display_subs = MENU_CONFIG[main_menu]
+            internal_subs = [DISPLAY_TO_INTERNAL.get(x, x) for x in display_subs]
+            default_sub = st.session_state.get("sub_menu", internal_subs[0] if internal_subs else None)
+            display_default = next((d for d in display_subs if DISPLAY_TO_INTERNAL.get(d, d) == default_sub), display_subs[0])
+            sub_index = display_subs.index(display_default)
+            selected_display = st.radio("세부 항목", display_subs, index=sub_index)
+            sub_menu = DISPLAY_TO_INTERNAL.get(selected_display, selected_display)
+
+        st.session_state["main_menu"] = main_menu
+        st.session_state["sub_menu"] = sub_menu
+
+        st.markdown("---")
+        st.caption("자주 쓰는 기능")
+        st.write("- 연차휴가 자동 판단")
+        st.write("- 병가일수 계산")
+        st.write("- 청원휴가 일수 계산")
+        st.write("- 휴가정정 절차 확인")
+
+    return main_menu, sub_menu
+
+
+# =========================================================
+# 페이지 라우팅
+# =========================================================
+PAGE_RENDERERS: Dict[tuple[str, Optional[str]], Callable[[], None]] = {
+    ("홈", None): render_home_dashboard,
+
+    ("휴가제도", "일반사항"): render_leave_general_page,
+    ("휴가제도", "연차휴가"): render_annual_leave_page,
+    ("휴가제도", "병가"): render_sick_leave_page,
+    ("휴가제도", "청원휴가"): render_petition_leave_page,
+    ("휴가제도", "보상휴가"): render_comp_leave_page,
+    ("휴가제도", "특별휴가(자녀돌봄)"): render_special_childcare_leave_page,
+    ("휴가제도", "가족돌봄휴가"): render_family_care_leave_page,
+    ("휴가제도", "반일휴가제"): render_half_day_leave_page,
+}
+
+
+# =========================================================
+# 메인 실행
+# =========================================================
+main_menu, sub_menu = render_sidebar()
+render_global_search()
+
+renderer = PAGE_RENDERERS.get((main_menu, sub_menu))
+if renderer:
+    renderer()
 else:
-    st.markdown("## 준비 중")
-    st.write("현재는 근무제도 1-1 ~ 1-4까지 구현되었습니다.")
-    st.write("다음 단계는 휴가제도(제4장)로 넘어가면 됩니다.")
+    render_placeholder_page(main_menu, sub_menu)
+
+
+# =========================================================
+# 적용 안내
+# =========================================================
+# 1) 이 파일은 현재 app.py를 실무형 구조로 정리한 통합본입니다.
+# 2) 기존에 이미 만들어 둔 공가, 지정휴무, 근무제도 전체, 휴가 세부 계산기 코드는
+#    아래 방식으로 계속 붙이면 됩니다.
+#
+#    예시:
+#    - def render_official_leave_page(): ...
+#    - PAGE_RENDERERS[("휴가제도", "공가")] = render_official_leave_page
+#
+#    - def render_designated_off_page(): ...
+#    - PAGE_RENDERERS[("근무제도", "지정휴무")] = render_designated_off_page
+#
+# 3) 즉, 앞으로는 거대한 if/elif를 계속 늘리는 대신
+#    페이지 함수 하나 만들고 PAGE_RENDERERS에 연결하는 방식으로 유지하면 됩니다.
+# =========================================================
